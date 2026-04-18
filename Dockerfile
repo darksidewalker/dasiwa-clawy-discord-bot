@@ -36,9 +36,10 @@ COPY config/   ./defaults/config/
 RUN mkdir -p config data \
     && chown -R 568:0 /app
 
-# Entrypoint script handles first-run config seeding and clear error messages
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+# Entrypoint script handles first-run config seeding and clear error messages.
+# --chmod=755 sets the execute bit atomically in the COPY layer so it cannot
+# be skipped by build cache and is unaffected by the source file's permissions.
+COPY --chmod=755 docker-entrypoint.sh /docker-entrypoint.sh
 
 USER 568
 
