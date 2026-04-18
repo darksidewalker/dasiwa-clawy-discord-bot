@@ -13,6 +13,8 @@ from core.ollama_client import OLLAMA
 from core.persona import PERSONAS
 from core.store import STORE
 
+from ._common import CleanCommandCog, ack, reply_permanent
+
 
 def _is_admin(ctx: commands.Context) -> bool:
     if ctx.author.id == CFG.owner_id:
@@ -22,38 +24,38 @@ def _is_admin(ctx: commands.Context) -> bool:
     return False
 
 
-class AdminCog(commands.Cog):
+class AdminCog(CleanCommandCog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    async def cog_check(self, ctx: commands.Context) -> bool:
+    def is_authorized(self, ctx: commands.Context) -> bool:
         return _is_admin(ctx)
 
     # ---------- kill switch ----------
     @commands.command(name="pause")
     async def pause(self, ctx: commands.Context) -> None:
         CFG.state.paused = True
-        await ctx.reply("Paused. No autonomous actions until `!resume`.")
+        await ack(ctx, "Paused. No autonomous actions until `!resume`.")
 
     @commands.command(name="resume")
     async def resume(self, ctx: commands.Context) -> None:
         CFG.state.paused = False
-        await ctx.reply("Resumed.")
+        await ack(ctx, "Resumed.")
 
     # ---------- mode ----------
     @commands.command(name="mode")
     async def mode(self, ctx: commands.Context, new_mode: str = "") -> None:
         if not new_mode:
-            await ctx.reply(
+            await reply_permanent(ctx,
                 f"Current mode: `{CFG.mode}`\n"
                 f"Options: {', '.join(VALID_MODES)}"
             )
             return
         if new_mode not in VALID_MODES:
-            await ctx.reply(f"Unknown mode. Options: {', '.join(VALID_MODES)}")
+            await ack(ctx, f"Unknown mode. Options: {', '.join(VALID_MODES)}")
             return
         CFG.state.mode_override = new_mode  # type: ignore[assignment]
-        await ctx.reply(f"Mode set to `{new_mode}` (session-only, until restart).")
+        await ack(ctx, f"Mode set to `{new_mode}` (session-only, until restart).")
 
     # ---------- persona & mood ----------
     @commands.command(name="persona")
@@ -63,16 +65,16 @@ class AdminCog(commands.Cog):
             for k in PERSONAS.list_personas():
                 lines.append(PERSONAS.describe(k))
                 lines.append("")
-            await ctx.reply("\n".join(lines)[:1900])
+            await reply_permanent(ctx, "\n".join(lines)[:1900])
             return
         if key == "reload":
             PERSONAS.reload()
-            await ctx.reply("Personas reloaded from disk.")
+            await ack(ctx, "Personas reloaded from disk.")
             return
         if PERSONAS.set_persona(key):
-            await ctx.reply(f"Persona set to **{key}** (mood: {PERSONAS.active_mood}).")
+            await ack(ctx, f"Persona set to **{key}** (mood: {PERSONAS.active_mood}).")
         else:
-            await ctx.reply(
+            await ack(ctx, 
                 f"Unknown persona `{key}`. Available: {', '.join(PERSONAS.list_personas())}"
             )
 
@@ -80,15 +82,15 @@ class AdminCog(commands.Cog):
     async def mood(self, ctx: commands.Context, mood_name: str = "") -> None:
         if not mood_name:
             moods = PERSONAS.list_moods()
-            await ctx.reply(
+            await reply_permanent(ctx,
                 f"Active mood: **{PERSONAS.active_mood}**\n"
                 f"Available for `{PERSONAS.active_key}`: {', '.join(moods)}"
             )
             return
         if PERSONAS.set_mood(mood_name):
-            await ctx.reply(f"Mood set to **{mood_name}**.")
+            await ack(ctx, f"Mood set to **{mood_name}**.")
         else:
-            await ctx.reply(
+            await ack(ctx, 
                 f"Unknown mood `{mood_name}`. Available: {', '.join(PERSONAS.list_moods())}"
             )
 
@@ -96,10 +98,10 @@ class AdminCog(commands.Cog):
     @commands.command(name="model")
     async def model(self, ctx: commands.Context, name: str = "") -> None:
         if not name:
-            await ctx.reply(f"Current model: `{CFG.model}`")
+            await reply_permanent(ctx, f"Current model: `{CFG.model}`")
             return
         CFG.state.model_override = name
-        await ctx.reply(f"Model set to `{name}` (session-only).")
+        await ack(ctx, f"Model set to `{name}` (session-only).")
 
     # ---------- thinking toggle ----------
     @commands.command(name="think")
@@ -109,7 +111,7 @@ class AdminCog(commands.Cog):
             yaml_default = bool(CFG.raw.get("ollama", {}).get("think", False))
             override = CFG.state.think_override
             src = "override" if override is not None else "config"
-            await ctx.reply(
+            await reply_permanent(ctx,
                 f"Thinking: **{'on' if CFG.think else 'off'}** (source: {src})\n"
                 f"YAML default: `{yaml_default}`.  Usage: `!think on` / `!think off` / `!think reset`"
             )
@@ -122,18 +124,18 @@ class AdminCog(commands.Cog):
         elif a in ("reset", "default", "clear"):
             CFG.state.think_override = None
         else:
-            await ctx.reply("Use `!think on`, `!think off`, or `!think reset`.")
+            await ack(ctx, "Use `!think on`, `!think off`, or `!think reset`.")
             return
-        await ctx.reply(f"Thinking is now **{'on' if CFG.think else 'off'}** (session-only).")
+        await ack(ctx, f"Thinking is now **{'on' if CFG.think else 'off'}** (session-only).")
 
     # ---------- log channel ----------
     @commands.command(name="setlog")
     async def setlog(self, ctx: commands.Context, channel: discord.TextChannel | None = None) -> None:
         if channel is None:
-            await ctx.reply("Usage: `!setlog #channel`")
+            await ack(ctx, "Usage: `!setlog #channel`")
             return
         CFG.raw["log_channel_id"] = channel.id
-        await ctx.reply(f"Log channel set to {channel.mention} (until restart).")
+        await ack(ctx, f"Log channel set to {channel.mention} (until restart).")
 
     # ---------- health ----------
     @commands.command(name="diag")
@@ -149,13 +151,13 @@ class AdminCog(commands.Cog):
             f"**DB**: `{CFG.db_path}`",
             f"**Allowed actions**: {', '.join(sorted(CFG.allowed_actions))}",
         ]
-        await ctx.reply("\n".join(lines))
+        await reply_permanent(ctx, "\n".join(lines))
 
     # ---------- user info from moderation store ----------
     @commands.command(name="strikes")
     async def strikes(self, ctx: commands.Context, member: discord.Member | None = None) -> None:
         if member is None:
-            await ctx.reply("Usage: `!strikes @user`")
+            await ack(ctx, "Usage: `!strikes @user`")
             return
         n = await STORE.count_strikes(member.id, CFG.mod.get("strike_window_hours", 24))
         events = await STORE.recent_mod_events(member.id, limit=5)
@@ -165,20 +167,20 @@ class AdminCog(commands.Cog):
             for e in events:
                 ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(e["ts"]))
                 lines.append(f"  • [{ts}] {e['kind']} — {e['reason'] or '(no reason)'}")
-        await ctx.reply("\n".join(lines)[:1900])
+        await reply_permanent(ctx, "\n".join(lines)[:1900])
 
     @commands.command(name="whois")
     async def whois(self, ctx: commands.Context, member: discord.Member | None = None) -> None:
         if member is None:
-            await ctx.reply("Usage: `!whois @user`")
+            await ack(ctx, "Usage: `!whois @user`")
             return
         info = await STORE.get_user(member.id)
         if not info:
-            await ctx.reply(f"No record of **{member.display_name}** yet.")
+            await ack(ctx, f"No record of **{member.display_name}** yet.")
             return
         first = time.strftime("%Y-%m-%d", time.localtime(info["first_seen"]))
         last = time.strftime("%Y-%m-%d %H:%M", time.localtime(info["last_seen"]))
-        await ctx.reply(
+        await reply_permanent(ctx,
             f"**{info['display_name']}**\n"
             f"• First seen: {first}\n"
             f"• Last seen: {last}\n"
@@ -191,26 +193,26 @@ class AdminCog(commands.Cog):
     async def forget(self, ctx: commands.Context, member: discord.Member | None = None) -> None:
         """Wipe chat memory for a user (does NOT touch moderation history)."""
         if member is None:
-            await ctx.reply("Usage: `!forget @user` — clears this user's chat memory only.")
+            await ack(ctx, "Usage: `!forget @user` — clears this user's chat memory only.")
             return
         await STORE.forget_user_chat(member.id)
-        await ctx.reply(f"Cleared chat memory for **{member.display_name}**. Mod history kept.")
+        await ack(ctx, f"Cleared chat memory for **{member.display_name}**. Mod history kept.")
 
     @commands.command(name="recall")
     async def recall(self, ctx: commands.Context, member: discord.Member | None = None) -> None:
         """Show what the bot remembers about a user (chat-wise)."""
         if member is None:
-            await ctx.reply("Usage: `!recall @user`")
+            await ack(ctx, "Usage: `!recall @user`")
             return
         turns = await STORE.recent_chat_turns(member.id, limit=10)
         if not turns:
-            await ctx.reply(f"No chat memory for **{member.display_name}**.")
+            await ack(ctx, f"No chat memory for **{member.display_name}**.")
             return
         lines = [f"**Chat memory with {member.display_name}** (most recent {len(turns)}):"]
         for t in turns:
             ts = time.strftime("%m-%d %H:%M", time.localtime(t["ts"]))
             lines.append(f"`[{ts}] {t['role']}:` {t['content'][:150]}")
-        await ctx.reply("\n".join(lines)[:1900])
+        await reply_permanent(ctx, "\n".join(lines)[:1900])
 
 
     # ---------- manual moderation (kick / ban / mute) ----------
@@ -218,52 +220,72 @@ class AdminCog(commands.Cog):
     async def kick(self, ctx: commands.Context, member: discord.Member | None = None, *, reason: str = "No reason given.") -> None:
         """Manually kick a member. Usage: !kick @user [reason]"""
         if member is None:
-            await ctx.reply("Usage: `!kick @user [reason]`")
+            await ack(ctx, "Usage: `!kick @user [reason]`")
             return
         result = await execute_kick(ctx.guild, member, reason, actor_id=ctx.author.id)
-        await ctx.reply(f"`{result}`", allowed_mentions=discord.AllowedMentions.none())
+        await ack(ctx, f"`{result}`")
 
     @commands.command(name="ban")
     async def ban(self, ctx: commands.Context, member: discord.Member | None = None, *, reason: str = "No reason given.") -> None:
         """Manually ban a member. Usage: !ban @user [reason]"""
         if member is None:
-            await ctx.reply("Usage: `!ban @user [reason]`")
+            await ack(ctx, "Usage: `!ban @user [reason]`")
             return
         result = await execute_ban(ctx.guild, member, reason, actor_id=ctx.author.id)
-        await ctx.reply(f"`{result}`", allowed_mentions=discord.AllowedMentions.none())
+        await ack(ctx, f"`{result}`")
 
     @commands.command(name="mute")
     async def mute(self, ctx: commands.Context, member: discord.Member | None = None, duration: str = "10m", *, reason: str = "No reason given.") -> None:
         """Manually mute a member. Usage: !mute @user [duration] [reason]
         Duration examples: 30m  2h  1h30m  (default: 10m)"""
         if member is None:
-            await ctx.reply("Usage: `!mute @user [duration] [reason]`")
+            await ack(ctx, "Usage: `!mute @user [duration] [reason]`")
             return
         import re
         m = re.match(r'^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$', duration.strip().lower())
         if not m or not any(m.groups()):
-            await ctx.reply("Invalid duration. Examples: `30m` `2h` `1h30m`")
+            await ack(ctx, "Invalid duration. Examples: `30m` `2h` `1h30m`")
             return
         seconds = int(m.group(1) or 0)*3600 + int(m.group(2) or 0)*60 + int(m.group(3) or 0)
         if seconds <= 0:
-            await ctx.reply("Duration must be greater than zero.")
+            await ack(ctx, "Duration must be greater than zero.")
             return
         result = await execute_mute(ctx.guild, member, seconds, reason, actor_id=ctx.author.id)
-        await ctx.reply(f"`{result}`", allowed_mentions=discord.AllowedMentions.none())
+        await ack(ctx, f"`{result}`")
 
     @commands.command(name="unmute")
     async def unmute(self, ctx: commands.Context, member: discord.Member | None = None) -> None:
         """Remove a timeout from a member. Usage: !unmute @user"""
         if member is None:
-            await ctx.reply("Usage: `!unmute @user`")
+            await ack(ctx, "Usage: `!unmute @user`")
             return
         try:
             await member.timeout(None, reason=f"Unmuted by {ctx.author}")
-            await ctx.reply(f"Removed timeout from **{member.display_name}**.",
+            await ack(ctx, f"Removed timeout from **{member.display_name}**.",
                             allowed_mentions=discord.AllowedMentions.none())
         except discord.Forbidden:
-            await ctx.reply("Missing permission to remove timeout.")
+            await ack(ctx, "Missing permission to remove timeout.")
 
+    @commands.command(name="perms")
+    async def perms(self, ctx: commands.Context) -> None:
+        """Show which permissions Clawy has in THIS channel."""
+        me = ctx.guild.me
+        p = ctx.channel.permissions_for(me)
+        needed = {
+            "View Channel":         p.view_channel,
+            "Send Messages":        p.send_messages,
+            "Read History":         p.read_message_history,
+            "Manage Messages":      p.manage_messages,
+            "Manage Webhooks":      p.manage_webhooks,
+            "Moderate Members":     p.moderate_members,
+            "Kick Members":         p.kick_members,
+            "Ban Members":          p.ban_members,
+            "Manage Roles":         p.manage_roles,
+        }
+        lines = [f"**Clawy's permissions in {ctx.channel.mention}:**"]
+        for name, ok in needed.items():
+            lines.append(f"  {'✅' if ok else '❌'} {name}")
+        await reply_permanent(ctx, "\n".join(lines))
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(AdminCog(bot))

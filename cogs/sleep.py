@@ -27,6 +27,8 @@ from discord.ext import commands, tasks
 from core.config import CFG
 from core.store import STORE
 
+from ._common import CleanCommandCog, ack, reply_permanent
+
 log = logging.getLogger(__name__)
 
 # Status text shown while sleeping
@@ -73,7 +75,7 @@ def _format_duration(seconds: int) -> str:
     return "".join(parts) or "0s"
 
 
-class SleepCog(commands.Cog):
+class SleepCog(CleanCommandCog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self._wake_task: asyncio.Task | None = None
@@ -84,7 +86,7 @@ class SleepCog(commands.Cog):
         if self._wake_task and not self._wake_task.done():
             self._wake_task.cancel()
 
-    async def cog_check(self, ctx: commands.Context) -> bool:
+    def is_authorized(self, ctx: commands.Context) -> bool:
         return _is_admin(ctx)
 
     # ── Presence helpers ────────────────────────────────────────────────
@@ -121,7 +123,7 @@ class SleepCog(commands.Cog):
         else:
             reply = "Going to sleep. Wake me with `!wake`."
 
-        await ctx.reply(reply)
+        await reply_permanent(ctx, reply)
 
         await STORE.log_bot_action(
             kind="sleep",
@@ -140,7 +142,7 @@ class SleepCog(commands.Cog):
         await self._set_awake_presence()
 
         if ctx is not None:
-            await ctx.reply("I am awake.")
+            await reply_permanent(ctx, "I am awake.")
 
         await STORE.log_bot_action(
             kind="wake",
@@ -164,19 +166,19 @@ class SleepCog(commands.Cog):
         if CFG.state.sleeping:
             remaining = CFG.state.wake_at - time.time() if CFG.state.wake_at else 0
             if remaining > 0:
-                await ctx.reply(
+                await ack(ctx,
                     f"Already sleeping. Auto-wake in **{_format_duration(int(remaining))}**. "
                     f"Use `!wake` to wake now."
                 )
             else:
-                await ctx.reply("Already sleeping. Use `!wake` to wake.")
+                await ack(ctx, "Already sleeping. Use `!wake` to wake.")
             return
 
         duration_s: int | None = None
         if duration:
             duration_s = _parse_duration(duration)
             if duration_s is None:
-                await ctx.reply(
+                await ack(ctx,
                     "Could not parse that duration. "
                     "Examples: `!sleep 30m` `!sleep 2h` `!sleep 1h30m`"
                 )
@@ -188,7 +190,7 @@ class SleepCog(commands.Cog):
     async def wake_cmd(self, ctx: commands.Context) -> None:
         """Wake Clawy up from sleep mode."""
         if not CFG.state.sleeping:
-            await ctx.reply("I am already awake.")
+            await ack(ctx, "I am already awake.")
             return
         await self._do_wake(ctx)
 
@@ -196,15 +198,15 @@ class SleepCog(commands.Cog):
     async def sleepstatus_cmd(self, ctx: commands.Context) -> None:
         """Show whether Clawy is sleeping and when she'll wake."""
         if not CFG.state.sleeping:
-            await ctx.reply("Awake and watching.")
+            await reply_permanent(ctx, "Awake and watching.")
             return
         if CFG.state.wake_at:
             remaining = max(0, CFG.state.wake_at - time.time())
-            await ctx.reply(
+            await reply_permanent(ctx,
                 f"Sleeping. Auto-wake in **{_format_duration(int(remaining))}**."
             )
         else:
-            await ctx.reply("Sleeping indefinitely. Use `!wake` to wake.")
+            await reply_permanent(ctx, "Sleeping indefinitely. Use `!wake` to wake.")
 
     # ── Auto-wake background task ────────────────────────────────────────
 

@@ -29,6 +29,8 @@ from discord.ext import commands, tasks
 from core.config import CFG
 from core.store import STORE
 
+from ._common import CleanCommandCog, ack, reply_permanent
+
 log = logging.getLogger(__name__)
 
 RULES_PATH = Path(__file__).resolve().parent.parent / "config" / "role_rules.json"
@@ -260,13 +262,17 @@ async def evaluate_member(member: discord.Member, guild: discord.Guild) -> None:
 
 # ── Cog ────────────────────────────────────────────────────────────────
 
-class RolesCog(commands.Cog):
+class RolesCog(CleanCommandCog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self._sweep.start()
 
     def cog_unload(self) -> None:
         self._sweep.cancel()
+
+    # Access control — auth gate for all !roles commands.
+    def is_authorized(self, ctx: commands.Context) -> bool:
+        return self._is_admin(ctx)
 
     # ── periodic full sweep ───────────────────────────────────────────
 
@@ -344,13 +350,10 @@ class RolesCog(commands.Cog):
           !roles grants @user — show which rules have already fired for a user
           !roles reset @user <rule_id> — clear a grant so the rule can fire again
         """
-        if not self._is_admin(ctx):
-            return
-
         if not sub or sub == "list":
             rules = RULE_ENGINE.rules()
             if not rules:
-                await ctx.reply("No enabled role rules loaded.")
+                await ack(ctx, "No enabled role rules loaded.")
                 return
             lines = [f"**{len(rules)} active role rule(s):**"]
             for r in rules:
@@ -363,57 +366,58 @@ class RolesCog(commands.Cog):
                     + f"\n  Grants: **{a.get('grant_role')}**"
                     + (f", removes: {a.get('remove_roles')}" if a.get('remove_roles') else "")
                 )
-            await ctx.reply("\n".join(lines)[:1900])
+            await reply_permanent(ctx, "\n".join(lines)[:1900])
 
         elif sub == "reload":
             n = RULE_ENGINE.reload()
-            await ctx.reply(f"Reloaded role rules. **{n}** rule(s) now active.")
+            await ack(ctx, f"Reloaded role rules. **{n}** rule(s) now active.")
 
         elif sub == "check":
             guild = self._guild()
             if guild is None:
-                await ctx.reply("Guild not found.")
+                await ack(ctx, "Guild not found.")
                 return
             # Parse @mention from arg
             member = await self._resolve_member(ctx, arg)
             if member is None:
-                await ctx.reply("Usage: `!roles check @user`")
+                await ack(ctx, "Usage: `!roles check @user`")
                 return
             await evaluate_member(member, guild)
-            await ctx.reply(f"Evaluated rules for **{member.display_name}**.")
+            await ack(ctx, f"Evaluated rules for **{member.display_name}**.")
 
         elif sub == "grants":
             member = await self._resolve_member(ctx, arg)
             if member is None:
-                await ctx.reply("Usage: `!roles grants @user`")
+                await ack(ctx, "Usage: `!roles grants @user`")
                 return
             grants = await STORE.user_role_grants(member.id)
             if not grants:
-                await ctx.reply(f"No role rules have fired for **{member.display_name}** yet.")
+                await ack(ctx, f"No role rules have fired for **{member.display_name}** yet.")
             else:
-                await ctx.reply(
+                await reply_permanent(
+                    ctx,
                     f"Rules already granted to **{member.display_name}**:\n"
-                    + "\n".join(f"• `{g}`" for g in grants)
+                    + "\n".join(f"• `{g}`" for g in grants),
                 )
 
         elif sub == "reset":
             parts = arg.strip().split()
             if len(parts) < 2:
-                await ctx.reply("Usage: `!roles reset @user <rule_id>`")
+                await ack(ctx, "Usage: `!roles reset @user <rule_id>`")
                 return
             member = await self._resolve_member(ctx, parts[0])
             rule_id = parts[-1]
             if member is None:
-                await ctx.reply("Could not find that user.")
+                await ack(ctx, "Could not find that user.")
                 return
             await STORE.clear_role_grant(member.id, rule_id)
-            await ctx.reply(
+            await ack(ctx, 
                 f"Cleared grant record for rule `{rule_id}` on **{member.display_name}**. "
                 f"The rule will fire again if they re-qualify."
             )
 
         else:
-            await ctx.reply(
+            await ack(ctx, 
                 "Unknown subcommand. Options: `list`, `reload`, `check @user`, "
                 "`grants @user`, `reset @user <rule_id>`"
             )

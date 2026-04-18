@@ -33,6 +33,8 @@ from discord.ext import commands
 from core.config import CFG
 from core.store import STORE
 
+from ._common import CleanCommandCog, ack, reply_permanent
+
 log = logging.getLogger(__name__)
 
 WEBHOOK_NAME = "persona-mover"   # bot-managed webhook name we look for / create
@@ -118,7 +120,7 @@ async def _post_to_log(guild: discord.Guild | None, text: str) -> None:
             log.warning("log channel send failed: %s", e)
 
 
-class MoveCog(commands.Cog):
+class MoveCog(CleanCommandCog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self._http: aiohttp.ClientSession | None = None
@@ -130,7 +132,7 @@ class MoveCog(commands.Cog):
         if self._http and not self._http.closed:
             await self._http.close()
 
-    async def cog_check(self, ctx: commands.Context) -> bool:
+    def is_authorized(self, ctx: commands.Context) -> bool:
         return _is_admin(ctx)
 
     # =====================================================
@@ -148,22 +150,22 @@ class MoveCog(commands.Cog):
         in the same channel.
         """
         if dest is None:
-            await ctx.reply("Usage: reply to a message, then: `!moveto #channel [N]`")
+            await ack(ctx, "Usage: reply to a message, then: `!moveto #channel [N]`")
             return
         if ctx.message.reference is None or ctx.message.reference.message_id is None:
-            await ctx.reply("You need to **reply** to the message you want to move.")
+            await ack(ctx, "You need to **reply** to the message you want to move.")
             return
         if not isinstance(ctx.channel, discord.TextChannel):
-            await ctx.reply("This command only works in text channels.")
+            await ack(ctx, "This command only works in text channels.")
             return
         if dest.id == ctx.channel.id:
-            await ctx.reply("Destination is the same as source.")
+            await ack(ctx, "Destination is the same as source.")
             return
 
         try:
             anchor = await ctx.channel.fetch_message(ctx.message.reference.message_id)
         except discord.NotFound:
-            await ctx.reply("Could not find the referenced message.")
+            await ack(ctx, "Could not find the referenced message.")
             return
 
         follow_count = max(0, min(follow_count, CFG.move_max_batch - 1))
@@ -192,13 +194,13 @@ class MoveCog(commands.Cog):
     ) -> None:
         """Move the last N messages from @user in this channel to #channel."""
         if member is None or dest is None:
-            await ctx.reply("Usage: `!movelast @user N #channel`")
+            await ack(ctx, "Usage: `!movelast @user N #channel`")
             return
         if not isinstance(ctx.channel, discord.TextChannel):
-            await ctx.reply("This command only works in text channels.")
+            await ack(ctx, "This command only works in text channels.")
             return
         if dest.id == ctx.channel.id:
-            await ctx.reply("Destination is the same as source.")
+            await ack(ctx, "Destination is the same as source.")
             return
         n = max(1, min(n, CFG.move_max_batch))
 
@@ -212,7 +214,7 @@ class MoveCog(commands.Cog):
                 if len(found) >= n:
                     break
         if not found:
-            await ctx.reply(f"No recent messages from **{member.display_name}** found.")
+            await ack(ctx, f"No recent messages from **{member.display_name}** found.")
             return
         # Chronological order for reposting
         found.reverse()
@@ -229,36 +231,30 @@ class MoveCog(commands.Cog):
         author: discord.abc.User,
     ) -> None:
         if not messages:
-            await ctx.reply("Nothing to move.")
+            await ack(ctx, "Nothing to move.")
             return
 
         # Permission sanity checks
         me = ctx.guild.me if ctx.guild else None
         if me is None:
-            await ctx.reply("No guild context.")
+            await ack(ctx, "No guild context.")
             return
         src_perms = ctx.channel.permissions_for(me)
         dst_perms = dest.permissions_for(me)
         if not dst_perms.manage_webhooks:
-            await ctx.reply(f"I need **Manage Webhooks** in {dest.mention}.")
+            await ack(ctx, f"I need **Manage Webhooks** in {dest.mention}.")
             return
         if not src_perms.manage_messages:
-            await ctx.reply("I need **Manage Messages** here to delete the originals.")
+            await ack(ctx, "I need **Manage Messages** here to delete the originals.")
             return
 
         webhook = await _get_or_create_webhook(dest)
         if webhook is None:
-            await ctx.reply(f"Could not create/find a webhook in {dest.mention}.")
+            await ack(ctx, f"Could not create/find a webhook in {dest.mention}.")
             return
 
         if self._http is None or self._http.closed:
             self._http = aiohttp.ClientSession()
-
-        # Delete the command message so the operation is invisible to regular users
-        try:
-            await ctx.message.delete()
-        except discord.DiscordException:
-            pass
 
         moved = 0
         failed = 0
