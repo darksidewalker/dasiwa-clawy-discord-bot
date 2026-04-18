@@ -100,7 +100,7 @@ chat:
   #
   # Moderation still applies to everyone regardless of this list.
   # Role names are case-sensitive — they must match Discord exactly.
-  allowed_roles: []
+  allowed_roles:
     - "Member"
 
 
