@@ -38,10 +38,11 @@ ignored_channels:
 # Tuned for persona chat (moods, 1-5 sentence replies) on CPU-only servers.
 # See README for model recommendations per hardware tier.
 ollama:
-  model: "qwen3.5:4b"         # newer, better at instruction following and roleplay
-  temperature: 0.75           # 0.75 gives expressive moods without breaking JSON
-  num_ctx: 512                # plenty for persona + 8 turns of history
-  timeout_seconds: 20         # safe margin for CPU inference
+  model: "gemma3:e2b"         # 2B model — small but coherent for chat/persona
+  temperature: 0.85           # 2B models tend toward dry/repetitive — lift slightly for personality
+  num_ctx: 4096               # MUST be ≥ persona + 8 history turns + system prompt; 512 silently truncates
+  num_predict: 320            # max tokens per reply (Ollama default 128 = ~2 short sentences)
+  timeout_seconds: 30         # 2B is fast on CPU but give it room
   think: false                # Enable or Disable the thinking mode of a model
 
 # ---- Moderation ----
@@ -62,6 +63,8 @@ moderation:
   strike_window_hours: 24
   spam_threshold: 6            # messages in window that trigger spam warning
   spam_window_seconds: 10
+  spam_strike_threshold: 3     # total strikes within strike_window_hours that escalate spam from warn → timeout (with delete). Counts ALL prior mod events (warn/timeout/delete/kick/strike), not just spam.
+  spam_timeout_seconds: 600    # mute duration when spam escalates
 
   # ---- Mention rate limit (how often a user can @mention the bot) ----
   mention_max: 4               # max @mentions allowed within the window

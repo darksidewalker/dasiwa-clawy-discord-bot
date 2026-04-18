@@ -22,6 +22,7 @@ from typing import Any
 import discord
 
 from .config import CFG
+from .store import STORE
 from .tracking import SPAM
 
 log = logging.getLogger(__name__)
@@ -117,7 +118,7 @@ if _blocklist_enabled():
 
 # ── Main prefilter ───────────────────────────────────────────────────
 
-def prefilter(message: discord.Message, bot_user_id: int) -> tuple[str, Any]:
+async def prefilter(message: discord.Message, bot_user_id: int) -> tuple[str, Any]:
     # 0. Ignore DMs and bots (including self)
     if message.author.bot:
         return ("skip", "author is a bot")
@@ -160,6 +161,25 @@ def prefilter(message: discord.Message, bot_user_id: int) -> tuple[str, Any]:
     # 5. Spam detection: record this message, then check the rate
     SPAM.record(message.author.id)
     if SPAM.is_spamming(message.author.id) and not is_protected:
+        # Escalate to mute + delete once the user has accumulated enough
+        # strikes within the rolling window. Below threshold → warn (which
+        # itself adds a strike, so repeat offenders converge on the mute).
+        strike_threshold = int(CFG.mod.get("spam_strike_threshold", 3))
+        window_hours = int(CFG.mod.get("strike_window_hours", 24))
+        strikes = await STORE.count_strikes(message.author.id, window_hours)
+        if strikes >= strike_threshold:
+            return (
+                "action",
+                {
+                    "action": "timeout",
+                    "reason": f"spam — escalated after {strikes} strikes",
+                    "duration_seconds": int(
+                        CFG.mod.get("spam_timeout_seconds", 600)
+                    ),
+                    "also_delete": True,
+                    "source": "prefilter:spam",
+                },
+            )
         return (
             "action",
             {

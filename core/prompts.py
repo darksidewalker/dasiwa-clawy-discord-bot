@@ -74,10 +74,14 @@ def build_chat_system_prompt() -> str:
     return (
         f"{_ROLEPLAY_FRAME}\n\n"
         f"{persona}\n\n"
-        "Respond as this character. "
+        "Respond as this character. Be genuinely helpful: when the user "
+        "asks a question, answer it with substance. When they want to "
+        "chat, engage warmly. Stay in character throughout.\n"
+        "Length: 2 to 6 sentences typically. Go longer if the question "
+        "needs it (explanations, lists, instructions). Never pad.\n"
         "Return a single JSON object with one key: "
         "{\"message\": \"your reply here\"}. "
-        "1 to 3 sentences maximum. No prose outside the JSON. No markdown fences."
+        "No prose outside the JSON. No markdown fences."
     )
 
 

@@ -135,6 +135,11 @@ class Config:
         return int(self.raw.get("ollama", {}).get("num_ctx", 4096))
 
     @property
+    def num_predict(self) -> int:
+        """Max tokens to generate. -1 = unlimited (Ollama default is 128)."""
+        return int(self.raw.get("ollama", {}).get("num_predict", 256))
+
+    @property
     def ollama_timeout(self) -> int:
         return int(self.raw.get("ollama", {}).get("timeout_seconds", 30))
 

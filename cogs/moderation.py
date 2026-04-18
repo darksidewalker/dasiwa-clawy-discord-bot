@@ -137,7 +137,7 @@ class ModerationCog(commands.Cog):
         # ========== MODERATION PATH ==========
         mod_decided_reply = False   # so we don't double-reply when mod already spoke
         if CFG.moderation_enabled:
-            decision, payload = prefilter(message, bot_user_id)
+            decision, payload = await prefilter(message, bot_user_id)
             if decision == "skip":
                 # Prefilter told us not to run mod. Fall through to chat (if enabled).
                 pass
@@ -156,6 +156,18 @@ class ModerationCog(commands.Cog):
                 else:
                     mod_result = await self._moderation_llm(message, was_mentioned)
                     if mod_result is not None:
+                        # Suppress conversational replies to users who are not
+                        # in the chat allowlist. Moderation actions (warn,
+                        # delete, timeout, role changes, ignore) still apply
+                        # — only "reply" is gated, since it's the path the
+                        # mod LLM uses to chat with mentioned users.
+                        if (mod_result.get("action") == "reply"
+                                and not is_chat_allowed(message.author)):
+                            log.debug(
+                                "mod LLM picked reply for non-allowed author %s — suppressing",
+                                message.author,
+                            )
+                            return
                         # LLM returned a decision
                         if mod_result.get("action") == "reply":
                             mod_decided_reply = True

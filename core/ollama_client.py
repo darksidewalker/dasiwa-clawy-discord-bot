@@ -52,6 +52,7 @@ class OllamaClient:
             "options": {
                 "temperature": CFG.temperature,
                 "num_ctx": CFG.num_ctx,
+                "num_predict": CFG.num_predict,
             },
             "messages": [
                 {"role": "system", "content": system},
