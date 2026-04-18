@@ -566,6 +566,7 @@ ollama:
   temperature: 0.75     # 0.0 = deterministic, 1.0 = creative
   num_ctx: 512          # Context window in tokens
   timeout_seconds: 20   # Max wait for Ollama before giving up
+  think: false
 
 # ── Moderation ───────────────────────────────────────────────────────
 moderation:
