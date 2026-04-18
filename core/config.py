@@ -30,6 +30,9 @@ class RuntimeState:
     # Sleep mode
     sleeping: bool = False
     wake_at: float = 0.0   # unix timestamp; 0.0 = no auto-wake scheduled
+    # Ollama thinking toggle. None = use YAML default (ollama.think).
+    # True/False = session override set by !think command.
+    think_override: bool | None = None
 
 
 @dataclass
@@ -127,6 +130,21 @@ class Config:
     @property
     def ollama_timeout(self) -> int:
         return int(self.raw.get("ollama", {}).get("timeout_seconds", 30))
+
+    @property
+    def think(self) -> bool:
+        """
+        Whether Ollama should run the model's reasoning trace before answering.
+
+        Resolution order: runtime !think override > YAML ollama.think > False.
+
+        Default is False: chat/moderation don't benefit from chain-of-thought
+        and the latency cost on CPU is significant (minutes instead of seconds
+        on Qwen3). Requires Ollama >= 0.9; you're on 0.12 so it's supported.
+        """
+        if self.state.think_override is not None:
+            return self.state.think_override
+        return bool(self.raw.get("ollama", {}).get("think", False))
 
     # ---- moderation ----
     @property

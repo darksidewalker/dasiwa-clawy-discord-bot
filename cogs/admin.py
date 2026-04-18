@@ -101,6 +101,31 @@ class AdminCog(commands.Cog):
         CFG.state.model_override = name
         await ctx.reply(f"Model set to `{name}` (session-only).")
 
+    # ---------- thinking toggle ----------
+    @commands.command(name="think")
+    async def think(self, ctx: commands.Context, arg: str = "") -> None:
+        """Toggle Ollama's reasoning phase. Usage: !think | !think on | !think off"""
+        if not arg:
+            yaml_default = bool(CFG.raw.get("ollama", {}).get("think", False))
+            override = CFG.state.think_override
+            src = "override" if override is not None else "config"
+            await ctx.reply(
+                f"Thinking: **{'on' if CFG.think else 'off'}** (source: {src})\n"
+                f"YAML default: `{yaml_default}`.  Usage: `!think on` / `!think off` / `!think reset`"
+            )
+            return
+        a = arg.strip().lower()
+        if a in ("on", "true", "1", "yes", "enable"):
+            CFG.state.think_override = True
+        elif a in ("off", "false", "0", "no", "disable"):
+            CFG.state.think_override = False
+        elif a in ("reset", "default", "clear"):
+            CFG.state.think_override = None
+        else:
+            await ctx.reply("Use `!think on`, `!think off`, or `!think reset`.")
+            return
+        await ctx.reply(f"Thinking is now **{'on' if CFG.think else 'off'}** (session-only).")
+
     # ---------- log channel ----------
     @commands.command(name="setlog")
     async def setlog(self, ctx: commands.Context, channel: discord.TextChannel | None = None) -> None:
@@ -118,7 +143,7 @@ class AdminCog(commands.Cog):
         latency_ms = int((time.time() - t0) * 1000)
         lines = [
             f"**Ollama**: {'✅ reachable' if healthy else '❌ unreachable'} at `{CFG.ollama_url}` ({latency_ms}ms)",
-            f"**Model**: `{CFG.model}`",
+            f"**Model**: `{CFG.model}`  |  **Think**: {'on' if CFG.think else 'off'}",
             f"**Mode**: `{CFG.mode}`  |  **Paused**: {CFG.state.paused}",
             f"**Persona**: `{PERSONAS.active_key}` / mood `{PERSONAS.active_mood}`",
             f"**DB**: `{CFG.db_path}`",

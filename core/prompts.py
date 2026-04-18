@@ -43,7 +43,9 @@ Rules:
 
 
 _ROLEPLAY_FRAME = (
-    "/no_think\n"   # Qwen3: disable <think> chain — ignored harmlessly by other models
+    # Note: thinking is controlled via the Ollama API `think` parameter
+    # (see core/ollama_client.py and config.yaml: ollama.think).
+    # No need for model-specific tokens like /no_think here.
     "This is a creative roleplay scenario for a Discord server bot. "
     "You are playing a fictional character. "
     "You must stay in character at all times. "
