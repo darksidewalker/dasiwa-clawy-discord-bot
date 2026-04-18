@@ -1,41 +1,52 @@
-# docker-compose.nobuild.yml
-# Use this on Servers like TrueNAS SCALE instead of docker-compose.yml
-# TrueNAS cannot build images locally — this pulls a pre-built image from a registry.
+# docker-compose.truenas.yml
+# ─────────────────────────────────────────────────────────────────────
+# Use this file on TrueNAS SCALE instead of docker-compose.yml.
 #
-# SETUP:
-#   1. Build and push the image from any Linux machine:
+# TrueNAS cannot build images locally — this pulls a pre-built image.
+#
+# BEFORE DEPLOYING:
+#   1. Build and push from any Linux/Mac machine:
 #      docker build -t yourusername/clawy-bot:latest .
 #      docker push yourusername/clawy-bot:latest
+#      (or use podman with explicit registry: podman login docker.io)
 #
-#   2. Replace "yourusername/clawy-bot:latest" below with your actual image name.
+#   2. Create these datasets on TrueNAS (Storage → your pool → Add Dataset):
+#      /mnt/<pool>/clawy/config    ← your config files (or leave empty for defaults)
+#      /mnt/<pool>/clawy/data      ← SQLite database (start empty)
 #
-#   3. In TrueNAS UI: Apps → Custom App → paste this file.
+#   3. Optionally copy your edited config files via SMB/SSH:
+#      scp -r config/ admin@truenas:/mnt/<pool>/clawy/config/
+#      If you skip this, the container seeds its own defaults on first start.
 #
-#   4. Create these datasets on TrueNAS BEFORE deploying:
-#      /mnt/<pool>/clawy/config    (for config files)
-#      /mnt/<pool>/clawy/data      (for SQLite database)
+#   4. Replace ALL placeholders below:
+#      - yourusername/clawy-bot:latest  → your actual image name
+#      - YOUR_DISCORD_TOKEN_HERE        → your bot token
+#      - 192.168.1.x                    → your TrueNAS host IP
+#      - <pool>                         → your TrueNAS pool name
 #
-#   5. Copy your config/ files and .env into the TrueNAS datasets via SMB/NFS/SSH.
+# TrueNAS notes:
+#   - UID 568 matches TrueNAS default apps user — volumes work without ACL hacks
+#   - Use host IP for Ollama, NOT localhost (containers can't reach host via localhost)
+#   - Find your host IP: TrueNAS UI → Network → Interfaces
+# ─────────────────────────────────────────────────────────────────────
 
 services:
   clawy:
-    image: darksidewalker/dasiwa-clawy-discord-bot:latest   # ← change this to your image
+    image: yourusername/clawy-bot:latest
     container_name: clawy
     restart: unless-stopped
 
-    # ── Volumes ───────────────────────────────────────────────────────
-    # Change /mnt/<pool> to match your actual TrueNAS pool name.
+    environment:
+      # ── Required ───────────────────────────────────────────────────
+      - DISCORD_TOKEN=YOUR_DISCORD_TOKEN_HERE
+
+      # ── Ollama — use your TrueNAS host's LAN IP, NOT localhost ─────
+      - OLLAMA_URL=http://192.168.1.x:11434
+
     volumes:
+      # Change /mnt/<pool> to your actual pool name
       - /mnt/<pool>/clawy/config:/app/config:ro
       - /mnt/<pool>/clawy/data:/app/data
-      - /mnt/<pool>/clawy/.env:/app/.env:ro
-
-    # ── Ollama on TrueNAS host ─────────────────────────────────────────
-    # If Ollama runs on the TrueNAS host itself, use the host IP (not localhost).
-    # Find it in TrueNAS: Network → Interfaces → your main interface IP.
-    # Do NOT use localhost — containers can't reach the host that way.
-    environment:
-      - OLLAMA_URL=http://192.168.1.x:11434    # ← set your TrueNAS IP here
 
     logging:
       driver: json-file

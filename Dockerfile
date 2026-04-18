@@ -3,16 +3,17 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /build
 
-# Install pip dependencies into a prefix directory so we can copy them cleanly
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
-# ── Runtime stage — minimal image ────────────────────────────────────
+# ── Runtime stage ─────────────────────────────────────────────────────
 FROM python:3.12-slim
 
-# Non-root user for security
-RUN useradd -m -u 1000 bot
+# UID 568 = TrueNAS default apps user.
+# Also works on standard Docker/Podman (uid just won't map to a named system user,
+# which is fine — what matters is the number matches volume ownership).
+RUN useradd -m -u 568 -g 0 bot
 
 WORKDIR /app
 
@@ -20,22 +21,28 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # Copy application code
-COPY main.py        ./
-COPY core/          ./core/
-COPY cogs/          ./cogs/
+COPY main.py   ./
+COPY core/     ./core/
+COPY cogs/     ./cogs/
 
-# These directories are mounted as volumes at runtime.
-# We create them here so the container starts cleanly even without a mount,
-# and so the 'bot' user owns them.
+# Bake default configs into the image under /app/defaults/
+# The entrypoint copies them to /app/config/ on first start if config is missing.
+# This means the container starts cleanly even if the volume is empty —
+# it self-initialises rather than crashing.
+COPY config/   ./defaults/config/
+
+# Runtime directories — will be overridden by volume mounts.
+# Owned by 568 so TrueNAS volumes (also owned by 568) are writable.
 RUN mkdir -p config data \
-    && chown -R bot:bot /app
+    && chown -R 568:0 /app
 
-USER bot
+# Entrypoint script handles first-run config seeding and clear error messages
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
-# The bot reads config from /app/config and writes the DB to /app/data.
-# Both are expected to be mounted as volumes.
-# OLLAMA_URL is passed via environment variable or .env file mounted into /app.
+USER 568
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-ENTRYPOINT ["python", "main.py"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
