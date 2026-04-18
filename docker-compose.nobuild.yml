@@ -1,0 +1,44 @@
+# docker-compose.nobuild.yml
+# Use this on Servers like TrueNAS SCALE instead of docker-compose.yml
+# TrueNAS cannot build images locally — this pulls a pre-built image from a registry.
+#
+# SETUP:
+#   1. Build and push the image from any Linux machine:
+#      docker build -t yourusername/clawy-bot:latest .
+#      docker push yourusername/clawy-bot:latest
+#
+#   2. Replace "yourusername/clawy-bot:latest" below with your actual image name.
+#
+#   3. In TrueNAS UI: Apps → Custom App → paste this file.
+#
+#   4. Create these datasets on TrueNAS BEFORE deploying:
+#      /mnt/<pool>/clawy/config    (for config files)
+#      /mnt/<pool>/clawy/data      (for SQLite database)
+#
+#   5. Copy your config/ files and .env into the TrueNAS datasets via SMB/NFS/SSH.
+
+services:
+  clawy:
+    image: yourusername/clawy-bot:latest    # ← change this to your image
+    container_name: clawy
+    restart: unless-stopped
+
+    # ── Volumes ───────────────────────────────────────────────────────
+    # Change /mnt/<pool> to match your actual TrueNAS pool name.
+    volumes:
+      - /mnt/<pool>/clawy/config:/app/config:ro
+      - /mnt/<pool>/clawy/data:/app/data
+      - /mnt/<pool>/clawy/.env:/app/.env:ro
+
+    # ── Ollama on TrueNAS host ─────────────────────────────────────────
+    # If Ollama runs on the TrueNAS host itself, use the host IP (not localhost).
+    # Find it in TrueNAS: Network → Interfaces → your main interface IP.
+    # Do NOT use localhost — containers can't reach the host that way.
+    environment:
+      - OLLAMA_URL=http://192.168.1.x:11434    # ← set your TrueNAS IP here
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

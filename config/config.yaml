@@ -1,0 +1,92 @@
+# ---- Discord ----
+guild_id: 0                  # REQUIRED: right-click your server -> Copy Server ID (dev mode)
+owner_id: 0                  # REQUIRED: your Discord user ID — the bot will never act on you
+log_channel_id: 0            # optional: channel ID for moderation logs (0 = disabled)
+command_prefix: "!"
+
+# ---- Bot mode ----
+# moderate_only  = silent observer + moderator. Never speaks unless a rule is broken or warning is needed.
+# chat_and_moderate = moderates AND will reply when @mentioned or when a direct question is asked.
+# chat_only      = chats when addressed, never moderates (useful for testing persona).
+mode: "chat_and_moderate"
+
+# ---- Address matching ----
+# If true, the bot ALSO responds when called by the active persona's name.
+# If false (default), only the bot's Discord display name + @mention work.
+respond_to_persona_name: false
+
+# ---- Storage ----
+database:
+  path: "data/bot.db"          # SQLite file (WAL mode)
+  chat_keep_last_turns: 50     # per-user memory size for chat
+  chat_context_turns: 8        # how many past turns to feed the LLM when chatting
+
+# Roles the bot must never touch (kick/ban/timeout/role-change).
+protected_roles:
+  - "Admin"
+  - "Moderator"
+  - "Owner"
+
+# Channels the bot should ignore entirely (no reading, no replying).
+ignored_channels:
+  - "staff-only"
+
+# ---- Persona is in config/personas.json ----
+# Edit that file to add/change personas. Or use !persona and !mood in chat.
+
+# ---- Ollama ----
+# Tuned for persona chat (moods, 1-5 sentence replies) on CPU-only servers.
+# See README for model recommendations per hardware tier.
+ollama:
+  model: "qwen3.5:4b"          # newer, better at instruction following and roleplay
+  temperature: 0.75            # 0.75 gives expressive moods without breaking JSON
+  num_ctx: 2048                # plenty for persona + 8 turns of history
+  timeout_seconds: 90          # safe margin for CPU inference
+
+# ---- Moderation ----
+moderation:
+  # Enable automatic muting from the hard blocklist (see blocklist_file below).
+  # If false (default), the blocklist is ignored entirely — the bot will not
+  # auto-mute anyone based on word matches. You can still moderate via the LLM
+  # or manually with !mute / !kick / !ban.
+  blocklist_enabled: false
+
+  # Optional JSON file with words/phrases that trigger automatic muting.
+  # Only read if blocklist_enabled: true above. See config/blocklist.json.example
+  blocklist_file: "config/blocklist.json"
+
+  proactive_reply_cooldown_seconds: 300
+  proactive_reply_chance: 0.0
+  default_timeout_seconds: 600
+  strike_window_hours: 24
+  spam_threshold: 6            # messages in window that trigger spam warning
+  spam_window_seconds: 10
+
+  # ---- Mention rate limit (how often a user can @mention the bot) ----
+  mention_max: 4               # max @mentions allowed within the window
+  mention_window_seconds: 30   # sliding window size in seconds
+  mention_reset_seconds: 120   # seconds of quiet before strikes reset
+  mention_timeout_seconds: 300 # mute duration on escalation (5 minutes)
+
+# ---- Move command ----
+move:
+  max_batch: 25                # max messages moved in one command (safety cap)
+  post_notice: true            # post "moved from #x by @admin" in destination
+
+# ---- Actions the LLM is allowed to pick autonomously ----
+# Kick and ban are intentionally absent — the LLM can never execute them.
+# If the LLM tries to pick kick/ban, it is flagged for human review instead.
+# Use !kick and !ban commands manually after reviewing the log channel.
+allowed_actions:
+  - reply
+  - delete
+  - warn
+  - timeout
+  - assign_role
+  - remove_role
+  - ignore
+
+# ---- Autonomous timeout cap ----
+# Even when the LLM picks "timeout", it is clamped to this maximum.
+# Longer mutes require a human via !mute @user <duration>.
+max_autonomous_timeout_seconds: 600   # 10 minutes hard cap

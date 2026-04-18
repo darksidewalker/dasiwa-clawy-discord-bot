@@ -1,0 +1,2 @@
+# This file exists only to preserve the data/ directory in Git.
+# The actual database (bot.db) is created here at runtime and is gitignored.

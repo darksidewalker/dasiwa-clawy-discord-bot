@@ -1,0 +1,60 @@
+# ── Secrets — NEVER commit these ─────────────────────────────────────
+.env
+*.env
+!.env.example
+
+# ── Runtime data — generated at runtime, not source code ─────────────
+data/*
+!data/.gitkeep
+
+# ── Python cache ──────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ── Virtual environment ───────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Distribution / packaging ──────────────────────────────────────────
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ── Logs ─────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── OS artifacts ─────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── Editor artifacts ─────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*~
+.project
+.pydevproject
+
+# ── Testing ───────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ── Docker ────────────────────────────────────────────────────────────
+# Keep Dockerfile and docker-compose.yml — they are source.
+# Ignore any local override files.
+docker-compose.override.yml

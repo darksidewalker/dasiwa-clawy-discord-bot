@@ -1,0 +1,44 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Virtual environment (not needed — Docker installs its own)
+.venv/
+venv/
+env/
+
+# Data and config (mounted as volumes at runtime — not baked in)
+data/
+config/
+
+# Secrets — NEVER bake these into an image
+.env
+*.env
+
+# Development / local tools
+.git/
+.gitignore
+*.md
+AGENTS.md
+QUICKSTART.md
+
+# Installer and start scripts (not needed inside the container)
+install.bat
+install.sh
+start.bat
+start.sh
+
+# Docker files themselves (avoid recursive context)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Editor artifacts
+.vscode/
+.idea/
+*.swp
+*.swo

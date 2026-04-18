@@ -1,0 +1,26 @@
+{
+  "_comment": "Optional hard blocklist. Add words/phrases here and set moderation.blocklist_enabled: true in config.yaml to activate. When enabled, matching messages are instantly deleted and the user is auto-muted — no LLM involved. Rename this file to blocklist.json (or change blocklist_file in config.yaml) to use it. Off by default.",
+
+  "words": [],
+
+  "phrases": [],
+
+  "timeout_seconds": 600,
+
+  "notify_user": true,
+
+  "notify_message": "That kind of language is not tolerated here. You have been silenced.",
+
+  "_field_docs": {
+    "words": "List of single words to match (whole-word, case-insensitive)",
+    "phrases": "List of multi-word phrases to match (case-insensitive substring match)",
+    "timeout_seconds": "How long to mute the user on match (default: 600 = 10 minutes)",
+    "notify_user": "If true, send the user a DM explaining why they were muted",
+    "notify_message": "The DM text sent when notify_user is true"
+  },
+
+  "_examples": {
+    "words": ["slur1", "slur2"],
+    "phrases": ["specific banned phrase", "another banned phrase"]
+  }
+}

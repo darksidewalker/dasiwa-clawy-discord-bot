@@ -1,0 +1,134 @@
+{
+  "_comment": "Role assignment rules. Each rule has a unique id. Edit freely and run !roles reload to apply without restart.",
+
+  "rules": [
+    {
+      "id": "regular",
+      "enabled": true,
+      "description": "Grants 'Regular' after 50 messages in 30 days AND at least 7 days in the server.",
+
+      "trigger": {
+        "type": "message_count",
+        "count": 50,
+        "window_days": 30,
+        "channel": null,
+        "min_days_member": 7,
+        "min_days_observed": null
+      },
+
+      "action": {
+        "grant_role": "Regular",
+        "remove_roles": [],
+        "once": true
+      },
+
+      "notify": {
+        "dm": true,
+        "message": "You have earned your place here. The realm acknowledges you as a Regular — welcome to the inner circle.",
+        "channel_id": null
+      }
+    },
+
+    {
+      "id": "active",
+      "enabled": true,
+      "description": "Grants 'Active' after 200 messages in 30 days AND at least 14 days in the server. Replaces Regular.",
+
+      "trigger": {
+        "type": "message_count",
+        "count": 200,
+        "window_days": 30,
+        "channel": null,
+        "min_days_member": 14,
+        "min_days_observed": null
+      },
+
+      "action": {
+        "grant_role": "Active",
+        "remove_roles": ["Regular"],
+        "once": true
+      },
+
+      "notify": {
+        "dm": true,
+        "message": "You have been persistent. I notice those who do not wither. You are now marked as Active.",
+        "channel_id": null
+      }
+    },
+
+    {
+      "id": "veteran",
+      "enabled": false,
+      "description": "Example: grants 'Veteran' after 500 messages AND 60 days as a server member.",
+
+      "trigger": {
+        "type": "message_count",
+        "count": 500,
+        "window_days": 60,
+        "channel": null,
+        "min_days_member": 60,
+        "min_days_observed": null
+      },
+
+      "action": {
+        "grant_role": "Veteran",
+        "remove_roles": ["Active", "Regular"],
+        "once": true
+      },
+
+      "notify": {
+        "dm": true,
+        "message": "You have endured. Most do not last this long in my realm. Veteran — wear it.",
+        "channel_id": null
+      }
+    },
+
+    {
+      "id": "off_topic_regular",
+      "enabled": false,
+      "description": "Example: grants 'Off-Topic Regular' after 30 messages specifically in #off-topic within 14 days.",
+
+      "trigger": {
+        "type": "message_count",
+        "count": 30,
+        "window_days": 14,
+        "channel": "off-topic",
+        "min_days_member": null,
+        "min_days_observed": null
+      },
+
+      "action": {
+        "grant_role": "Off-Topic Regular",
+        "remove_roles": [],
+        "once": true
+      },
+
+      "notify": {
+        "dm": true,
+        "message": "You spend a curious amount of time in the off-topic halls. I have noticed. Wear this role accordingly.",
+        "channel_id": null
+      }
+    }
+  ],
+
+  "_trigger_fields": {
+    "type": "message_count (only supported type currently)",
+    "count": "Number of messages required in the window",
+    "window_days": "Rolling time window in days (e.g. 7, 14, 30, 60)",
+    "channel": "Channel name to restrict counting to, or null for server-wide",
+    "min_days_member": "User must have been in the server at least this many days (uses Discord joined_at — works even before the bot was installed). null = no minimum.",
+    "min_days_observed": "User must have been seen by the bot for at least this many days (uses when the bot first recorded them). null = no minimum."
+  },
+
+  "_action_fields": {
+    "grant_role": "Exact role name to grant (must exist in Discord)",
+    "remove_roles": "List of role names to remove when granting (for role upgrades)",
+    "once": "If true, fires only once per user. If false, re-fires if they re-qualify after losing the role."
+  },
+
+  "_notify_fields": {
+    "dm": "If true, send a DM to the user when the role is granted",
+    "message": "The DM text — written in the persona's voice",
+    "channel_id": "Optional channel ID to post a public announcement (null = quiet)"
+  }
+}
