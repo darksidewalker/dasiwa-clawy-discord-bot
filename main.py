@@ -46,10 +46,38 @@ def build_bot() -> commands.Bot:
 
     @bot.event
     async def on_command_error(ctx: commands.Context, error: Exception) -> None:
-        if isinstance(error, commands.CheckFailure):
-            return
+        # Commands the user typed that don't exist — silently ignore.
         if isinstance(error, commands.CommandNotFound):
             return
+
+        # Argument parsing errors (bad user input, missing arg, unresolvable
+        # member/channel/etc.) happen BEFORE cog_before_invoke runs, so our
+        # CleanCommandCog hasn't deleted the !command yet. Do it here, and
+        # send a transient hint so the admin sees what went wrong.
+        from cogs._common import CleanCommandCog, ack, delete_cmd
+
+        is_clean_cog = isinstance(ctx.cog, CleanCommandCog)
+
+        if isinstance(error, commands.UserInputError):
+            if is_clean_cog:
+                await delete_cmd(ctx)
+                # Show a short hint — use the original exception's message
+                # (usually: "Member 'X' not found", "Missing required argument",
+                # "Converting to 'int' failed").
+                await ack(ctx, f"⚠️ {type(error).__name__}: {error}")
+            else:
+                log.warning("parse error: %s", error)
+            return
+
+        # CheckFailure = non-admin hit a gated command. cog_check already
+        # deleted the message via CleanCommandCog, so just stay silent.
+        if isinstance(error, commands.CheckFailure):
+            return
+
+        # Anything else — log and, if it came from a clean cog, clean up.
+        if is_clean_cog:
+            await delete_cmd(ctx)
+            await ack(ctx, f"⚠️ command failed: {type(error).__name__}")
         log.warning("command error: %s", error)
 
     return bot

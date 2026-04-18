@@ -35,11 +35,25 @@ ACK_LINGER_SECONDS = 6
 
 
 async def delete_cmd(ctx: commands.Context) -> None:
-    """Delete the invoking !command message. Silent on failure."""
+    """Delete the invoking !command message.
+
+    Failures are logged but don't raise. The most common silent failure is
+    missing 'Manage Messages' permission in the source channel — if you see
+    your !command staying visible despite a successful reply, check:
+        !perms
+    in that channel and look for ❌ Manage Messages.
+    """
     try:
         await ctx.message.delete()
-    except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-        pass
+    except discord.Forbidden:
+        log.warning(
+            "Cannot delete command in #%s — missing Manage Messages",
+            getattr(ctx.channel, "name", "?"),
+        )
+    except discord.NotFound:
+        pass  # Already gone, fine.
+    except discord.HTTPException as e:
+        log.warning("Delete failed: %s", e)
 
 
 async def ack(
