@@ -1,33 +1,15 @@
-# docker-compose.truenas.yml
+# docker-compose.truenas.yml — TrueNAS SCALE
 # ─────────────────────────────────────────────────────────────────────
-# Use this file on TrueNAS SCALE instead of docker-compose.yml.
+# SETUP — replace these placeholders before deploying:
+#   <pool>             → your TrueNAS pool name (e.g. VM)
+#   YOUR_TOKEN_HERE    → your Discord bot token
+#   192.168.1.x:12345 → your Ollama host IP and port
 #
-# TrueNAS cannot build images locally — this pulls a pre-built image.
-#
-# BEFORE DEPLOYING:
-#   1. Build and push from any Linux/Mac machine:
-#      docker build -t yourusername/clawy-bot:latest .
-#      docker push yourusername/clawy-bot:latest
-#      (or use podman with explicit registry: podman login docker.io)
-#
-#   2. Create these datasets on TrueNAS (Storage → your pool → Add Dataset):
-#      /mnt/<pool>/clawy/config    ← your config files (or leave empty for defaults)
-#      /mnt/<pool>/clawy/data      ← SQLite database (start empty)
-#
-#   3. Optionally copy your edited config files via SMB/SSH:
-#      scp -r config/ admin@truenas:/mnt/<pool>/clawy/config/
-#      If you skip this, the container seeds its own defaults on first start.
-#
-#   4. Replace ALL placeholders below:
-#      - yourusername/clawy-bot:latest  → your actual image name
-#      - YOUR_DISCORD_TOKEN_HERE        → your bot token
-#      - 192.168.1.x                    → your TrueNAS host IP
-#      - <pool>                         → your TrueNAS pool name
-#
-# TrueNAS notes:
-#   - UID 568 matches TrueNAS default apps user — volumes work without ACL hacks
-#   - Use host IP for Ollama, NOT localhost (containers can't reach host via localhost)
-#   - Find your host IP: TrueNAS UI → Network → Interfaces
+# HOW IT WORKS:
+#   First start: container writes default config files into your dataset.
+#   You then edit them directly on the host (via SMB/SSH/TrueNAS shell).
+#   Subsequent starts: existing files are left untouched.
+#   The bot warns in logs if guild_id / owner_id are still 0.
 # ─────────────────────────────────────────────────────────────────────
 
 services:
@@ -37,19 +19,18 @@ services:
     restart: unless-stopped
 
     environment:
-      # ── Required ───────────────────────────────────────────────────
-      - DISCORD_TOKEN=YOUR_DISCORD_TOKEN_HERE
-
-      # ── Ollama — use your TrueNAS host's LAN IP, NOT localhost ─────
-      - OLLAMA_URL=http://192.168.1.x:11434
+      - DISCORD_TOKEN=YOUR_TOKEN_HERE
+      - OLLAMA_URL=http://192.168.1.x:12345
 
     volumes:
-      # Change /mnt/<pool> to your actual pool name
-      - /mnt/<pool>/clawy/config:/app/config:ro
+      # Both volumes are read-write.
+      # config/ — bot writes defaults here on first start, you edit them after.
+      # data/   — SQLite database lives here.
+      - /mnt/<pool>/clawy/config:/app/config
       - /mnt/<pool>/clawy/data:/app/data
 
     logging:
       driver: json-file
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: 10m
+        max-file: '3'
