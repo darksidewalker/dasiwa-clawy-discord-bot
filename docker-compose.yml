@@ -5,37 +5,42 @@ services:
     container_name: clawy
     restart: unless-stopped
 
-    # ── Token ─────────────────────────────────────────────────────────
-    # Option A: mount a .env file (recommended — keeps token out of compose)
-    # Option B: set it directly here as an environment variable (less secure)
+    # ── Configuration ────────────────────────────────────────────────
+    # Two ways to configure, pick whichever you prefer:
     #
-    # Option A (default — comment out if using B):
-    # volumes include .env mount below
+    #   A) Mount a .env file (recommended — keeps the token out of compose).
+    #      Uncomment the .env line under `volumes:` below.
     #
-    # Option B — uncomment and fill in:
-    # environment:
-    #   - DISCORD_TOKEN=your-token-here
-    #   - OLLAMA_URL=http://192.168.1.x:11434
+    #   B) Set environment variables directly here.
+    #      Uncomment the block below. Values here OVERRIDE whatever is in
+    #      .env AND whatever is in config/config.yaml.
+    #
+    # If DISCORD_TOKEN is missing or a placeholder on startup, the container
+    # stays alive and polls every 10 s — drop a .env on the volume or add
+    # the env var + restart, and it continues automatically.
 
-    # ── Volumes ───────────────────────────────────────────────────────
-    # config/ is read-only — edit on the host, restart to apply.
-    # data/   is read-write — SQLite database lives here.
-    # .env    is read-only — your Discord token.
-    #
-    # If config/ is empty on first start, the container seeds it from
-    # the baked-in defaults automatically.
-    volumes:
-      - ./config:/app/config:ro
-      - ./data:/app/data
-      - ./.env:/app/.env:ro
-
-    # ── Ollama ────────────────────────────────────────────────────────
-    # Ollama runs OUTSIDE the container on the host.
-    # host.docker.internal = Docker Desktop (Mac/Windows)
-    # 172.17.0.1           = Linux native Docker (default bridge IP)
-    # 192.168.1.x          = direct LAN IP (always works, recommended)
     environment:
+      # Ollama location — see .env.example for host-vs-container guidance.
       - OLLAMA_URL=http://host.docker.internal:11434
+
+      # Uncomment + fill in to configure entirely via compose:
+      # - DISCORD_TOKEN=your-token-here
+      # - GUILD_ID=0
+      # - OWNER_ID=0
+      # - LOG_CHANNEL_ID=0
+      # - OLLAMA_MODEL=qwen3:8b
+      # - BOT_MODE=chat_and_moderate
+
+    volumes:
+      # Config — writable so first-start seeding and env overrides work.
+      # Edit files on the host and restart to apply non-env changes.
+      - ./config:/app/config
+
+      # Runtime data — SQLite database lives here.
+      - ./data:/app/data
+
+      # Uncomment to load your token from a .env file on the host:
+      - ./.env:/app/.env:ro
 
     logging:
       driver: json-file

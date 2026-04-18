@@ -1,0 +1,86 @@
+# docker-compose.truenas.yml
+# ─────────────────────────────────────────────────────────────────────
+# TrueNAS SCALE deployment for Clawy.
+#
+# WHAT THIS GIVES YOU:
+#   - Fully configurable via the `environment:` block below
+#   - No file editing required on first start
+#   - Container self-seeds default configs into the mounted volume
+#   - If DISCORD_TOKEN is missing, the container stays alive and waits
+#     for it (add/fix the env var and restart, or drop a .env on the
+#     volume — picked up automatically within 10 seconds, no restart)
+#
+# BEFORE DEPLOYING:
+#   1. Build and push the image from any Linux/Mac machine (TrueNAS can't
+#      build locally):
+#        docker build -t yourusername/clawy-bot:latest .
+#        docker push yourusername/clawy-bot:latest
+#
+#   2. Create these datasets on TrueNAS
+#      (Storage → your pool → Add Dataset):
+#        /mnt/<pool>/clawy/config     ← empty is fine; container seeds defaults
+#        /mnt/<pool>/clawy/data       ← empty; SQLite database lives here
+#
+#      The datasets must be writable by UID 568 (TrueNAS default apps user).
+#      If you used the TrueNAS UI to create them, this is automatic.
+#
+#   3. Replace the placeholders marked below and deploy via:
+#        TrueNAS UI → Apps → Custom App → paste this yaml
+#      (or: docker compose -f docker-compose.truenas.yml up -d via SSH)
+#
+# TrueNAS notes:
+#   - Use your TrueNAS host's LAN IP for OLLAMA_URL — NOT localhost.
+#     Containers can't reach the host via localhost.
+#     Find it: TrueNAS UI → Network → Interfaces.
+#   - UID 568 matches the default apps user; volumes work without ACL hacks.
+# ─────────────────────────────────────────────────────────────────────
+
+services:
+  clawy:
+    image: darksidewalker/dasiwa-clawy-discord-bot:latest
+    container_name: clawy
+    restart: unless-stopped
+
+    environment:
+      # ── REQUIRED ───────────────────────────────────────────────────
+      # Get a token at https://discord.com/developers/applications
+      - DISCORD_TOKEN=YOUR_DISCORD_TOKEN_HERE
+
+      # Your Discord server ID (right-click server → Copy Server ID,
+      # with Developer Mode enabled in Discord settings).
+      - GUILD_ID=0
+
+      # Your personal Discord user ID (right-click your name → Copy User ID).
+      # The bot will never act on this user.
+      - OWNER_ID=0
+
+      # ── OPTIONAL BUT RECOMMENDED ───────────────────────────────────
+      # Private channel ID for moderation logs. 0 = disabled.
+      - LOG_CHANNEL_ID=0
+
+      # Where your Ollama runs. MUST be your TrueNAS host's LAN IP,
+      # NOT localhost (containers can't reach the host via localhost).
+      - OLLAMA_URL=http://192.168.1.x:11434
+
+      # Override the model defined in config.yaml. Leave commented to
+      # use the file's value (default: qwen3:8b).
+      # - OLLAMA_MODEL=qwen3:8b
+
+      # Bot mode: moderate_only | chat_and_moderate | chat_only
+      # - BOT_MODE=chat_and_moderate
+
+    volumes:
+      # Config volume — writable so the container can seed default
+      # config.yaml / personas.json / role_rules.json on first start,
+      # and so env-var overrides can be persisted into config.yaml.
+      # Replace /mnt/<pool> with your actual pool name.
+      - /mnt/<pool>/clawy/config:/app/config
+
+      # Data volume — SQLite database.
+      - /mnt/<pool>/clawy/data:/app/data
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

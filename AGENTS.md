@@ -213,6 +213,56 @@ allowed_actions:     # What the LLM can pick
 
 ---
 
+## Docker deployment contract
+
+The container is configured through a three-layer precedence chain:
+
+```
+config/config.yaml  <  /app/.env  <  process environment variables
+    (lowest)                             (highest)
+```
+
+**How it works (see `docker-entrypoint.sh`):**
+
+1. On boot, missing files in `/app/config/` are seeded from `/app/defaults/config/`.
+2. `/app/.env` is parsed and each key exported into the process environment.
+3. A Python block rewrites `config.yaml` with any values set via supported env
+   vars — see the table below. Keys not set in env are left untouched.
+4. `core/config.py` then reads `config.yaml` normally. It has no knowledge of
+   this mechanism and requires no changes.
+
+**Supported env-var overrides:**
+
+| Env var | Target in config.yaml | Type |
+|---|---|---|
+| `GUILD_ID` | `guild_id` | int |
+| `OWNER_ID` | `owner_id` | int |
+| `LOG_CHANNEL_ID` | `log_channel_id` | int |
+| `BOT_MODE` | `mode` | string (enum) |
+| `OLLAMA_MODEL` | `ollama.model` | string |
+
+**Not written into config.yaml:** `DISCORD_TOKEN` and `OLLAMA_URL`. These are
+read from the process environment directly by `core/config.py`.
+
+**Critical invariants for agents modifying this flow:**
+
+- **Never exit the container on missing `DISCORD_TOKEN`.** The entrypoint
+  idle-loops and polls every 10s. This keeps TrueNAS / Portainer / compose
+  managers from crash-looping, and lets users drop a `.env` onto the volume
+  without a restart.
+- **Never add `set -e` at the top of `docker-entrypoint.sh`.** A read-only
+  config mount causes `cp` to fail; with `set -e` that kills the container
+  before the useful error is logged. Errors are handled per-step instead.
+- **Never write `DISCORD_TOKEN` or `OLLAMA_URL` into `config.yaml`.** Token
+  must never land on disk inside the config volume (secret leakage risk), and
+  `OLLAMA_URL` has no matching key in `config.yaml` schema — it's purely env.
+- **If you add a new env-override key**, update (a) the Python `set_*` calls
+  in `docker-entrypoint.sh`, (b) the "Supported overrides" comment block in
+  the same file, (c) the table in `DOCKER.md`, (d) the section in
+  `.env.example`, and (e) the table above.
+
+---
+
 ## Testing without Ollama
 
 To run the bot on a headless server without GPU:
