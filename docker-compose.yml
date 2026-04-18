@@ -1,7 +1,7 @@
 services:
   clawy:
     build: .
-    image: clawy-bot:latest
+    image: dasiwa-clawy-discord-bot:latest
     container_name: clawy
 
     restart: unless-stopped

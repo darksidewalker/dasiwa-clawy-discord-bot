@@ -19,7 +19,7 @@
 
 services:
   clawy:
-    image: yourusername/clawy-bot:latest    # ← change this to your image
+    image: darksidewalker/dasiwa-clawy-discord-bot:latest   # ← change this to your image
     container_name: clawy
     restart: unless-stopped
 
