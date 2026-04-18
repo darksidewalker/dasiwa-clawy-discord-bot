@@ -31,8 +31,15 @@ class RuntimeState:
     sleeping: bool = False
     wake_at: float = 0.0   # unix timestamp; 0.0 = no auto-wake scheduled
     # Ollama thinking toggle. None = use YAML default (ollama.think).
-    # True/False = session override set by !think command.
     think_override: bool | None = None
+    # Chat gating — session overrides
+    quiet_hours_enabled_override: bool | None = None
+    quiet_hours_start_override: str | None = None   # "HH:MM"
+    quiet_hours_end_override: str | None = None     # "HH:MM"
+    quiet_hours_timezone_override: str | None = None
+    chat_allowed_roles_override: list[str] | None = None
+    # Proactive reply chance override (None = use YAML)
+    proactive_chance_override: float | None = None
 
 
 @dataclass
@@ -135,16 +142,56 @@ class Config:
     def think(self) -> bool:
         """
         Whether Ollama should run the model's reasoning trace before answering.
-
-        Resolution order: runtime !think override > YAML ollama.think > False.
-
-        Default is False: chat/moderation don't benefit from chain-of-thought
-        and the latency cost on CPU is significant (minutes instead of seconds
-        on Qwen3). Requires Ollama >= 0.9; you're on 0.12 so it's supported.
+        Resolution: runtime !think override > YAML ollama.think > False.
         """
         if self.state.think_override is not None:
             return self.state.think_override
         return bool(self.raw.get("ollama", {}).get("think", False))
+
+    # ---- chat gating ----
+
+    @property
+    def chat_allowed_roles(self) -> list[str]:
+        """Role NAMES that are allowed to chat with Clawy.
+        Empty list = everyone can chat (current default behavior).
+        Session override via !chatroles takes precedence over YAML.
+        """
+        if self.state.chat_allowed_roles_override is not None:
+            return list(self.state.chat_allowed_roles_override)
+        return list(self.raw.get("chat", {}).get("allowed_roles", []))
+
+    @property
+    def quiet_hours_enabled(self) -> bool:
+        if self.state.quiet_hours_enabled_override is not None:
+            return self.state.quiet_hours_enabled_override
+        return bool(self.raw.get("chat", {}).get("quiet_hours", {}).get("enabled", False))
+
+    @property
+    def quiet_hours_start(self) -> str:
+        """24h HH:MM string (e.g. '23:00'). Session override > YAML > '23:00'."""
+        if self.state.quiet_hours_start_override is not None:
+            return self.state.quiet_hours_start_override
+        return str(self.raw.get("chat", {}).get("quiet_hours", {}).get("start", "23:00"))
+
+    @property
+    def quiet_hours_end(self) -> str:
+        if self.state.quiet_hours_end_override is not None:
+            return self.state.quiet_hours_end_override
+        return str(self.raw.get("chat", {}).get("quiet_hours", {}).get("end", "07:00"))
+
+    @property
+    def quiet_hours_timezone(self) -> str:
+        """IANA timezone name (e.g. 'Europe/Berlin'). Default: UTC."""
+        if self.state.quiet_hours_timezone_override is not None:
+            return self.state.quiet_hours_timezone_override
+        return str(self.raw.get("chat", {}).get("quiet_hours", {}).get("timezone", "UTC"))
+
+    @property
+    def proactive_reply_chance(self) -> float:
+        """0.0 = off, 1.0 = reply to every message."""
+        if self.state.proactive_chance_override is not None:
+            return self.state.proactive_chance_override
+        return float(self.raw.get("moderation", {}).get("proactive_reply_chance", 0.0))
 
     # ---- moderation ----
     @property

@@ -47,4 +47,13 @@ No permission issues on Windows.
 
 ---
 
+## First commands to try
+
+Once Clawy is online and joined to your server:
+
+- `!help` — list all available commands grouped by function
+- `!help <command>` — details for any specific command
+- `!diag` — health check: Ollama reachable, current model, mode, gating state
+- `!perms` — confirm Clawy has the Discord permissions she needs in a channel
+
 **Full documentation:** See `README.md` (local install) or `DOCKER.md` (containers).

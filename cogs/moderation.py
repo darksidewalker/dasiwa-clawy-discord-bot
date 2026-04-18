@@ -22,6 +22,7 @@ from discord.ext import commands
 
 from core.config import CFG
 from core.executor import execute
+from core.gating import in_quiet_hours, is_chat_allowed
 from core.ollama_client import OLLAMA
 from core.prefilter import prefilter
 from core.prompts import build_chat_system_prompt, build_system_prompt
@@ -175,6 +176,20 @@ class ModerationCog(commands.Cog):
         if mod_decided_reply:
             return   # moderation already spoke
 
+        # ── NEW: chat gates ─────────────────────────────────────────────
+        # During quiet hours Clawy stays completely silent (even when directly
+        # addressed). Moderation continues normally. Matches !sleep semantics
+        # but scheduled, not manual.
+        if in_quiet_hours():
+            log.debug("quiet hours active — ignoring message from %s", message.author)
+            return
+        # Role allowlist: if configured, only members of those roles get replies.
+        if not is_chat_allowed(message.author):
+            log.debug("author %s not in chat allowlist — ignoring",
+                      message.author.display_name)
+            return
+        # ─────────────────────────────────────────────────────────────────
+
         await self._chat(message)
 
     # ================================================================
@@ -188,7 +203,14 @@ class ModerationCog(commands.Cog):
         # Throttle: don't ask the LLM about every benign message.
         # If not mentioned, skip unless the content looks noteworthy OR the dice say so.
         if not was_mentioned:
-            chance = float(CFG.mod.get("proactive_reply_chance", 0.0))
+            # Proactive replies honor the same chat gates: quiet hours and
+            # role allowlist. A directly-addressed message already passed the
+            # gates further up in on_message, but proactive does not.
+            if in_quiet_hours():
+                return None
+            if not is_chat_allowed(message.author):
+                return None
+            chance = CFG.proactive_reply_chance
             cooldown = float(CFG.mod.get("proactive_reply_cooldown_seconds", 300))
             last = self._last_proactive.get(message.channel.id, 0.0)
             cooldown_ok = time.time() - last > cooldown

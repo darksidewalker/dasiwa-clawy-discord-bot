@@ -474,17 +474,34 @@ when chatting so Clawy remembers what was said earlier in the conversation.
 ## 13. All admin commands
 
 All commands require **Administrator** permission or being `owner_id`.
-Regular users get no response when they try.
+Regular users get no response when they try — their `!command` message is
+silently deleted.
 
-### Bot control
+**Quick tip:** run `!help` in Discord for a live command list, or
+`!help <command>` for usage details of a specific command.
+
+**Where output goes:** Transient confirmations ("Paused", "Mode set to X",
+usage hints, errors) appear briefly in the channel where you typed, then
+self-delete after ~6 seconds. Informational output (`!diag`, `!whois`,
+`!strikes`, `!perms`, listings) is routed to the configured log channel
+(`log_channel_id`) so regular users don't see admin diagnostics — with a
+brief "Sent to #log." breadcrumb where you ran the command. If no log
+channel is set or Clawy can't write there, output falls back to the source
+channel.
+
+### Bot control / kill switch
 
 | Command | Description |
 |---|---|
 | `!pause` | Disable all autonomous actions (kill switch) |
 | `!resume` | Re-enable autonomous actions |
-| `!diag` | Health check: Ollama status, model, mode, persona, DB path |
+| `!sleep` | Sleep indefinitely (ignores everything except admin commands) |
+| `!sleep 30m` / `!sleep 2h` / `!sleep 1h30m` | Sleep for a duration, auto-wake afterwards |
+| `!wake` | Wake immediately |
+| `!sleepstatus` | Show sleep state and time-until-wake |
+| `!diag` | Health check: Ollama, model, mode, persona, gating, DB |
 
-### Mode
+### Mode & persona
 
 | Command | Description |
 |---|---|
@@ -492,33 +509,58 @@ Regular users get no response when they try.
 | `!mode moderate_only` | Moderate only, no chat (session) |
 | `!mode chat_and_moderate` | Full mode — default (session) |
 | `!mode chat_only` | Chat only, no moderation (session) |
-
-### Persona & mood
-
-| Command | Description |
-|---|---|
-| `!persona` | List all personas with moods |
-| `!persona <key>` | Switch persona — e.g. `!persona clawy` |
+| `!persona` | List all personas with descriptions + moods |
+| `!persona <key>` | Switch persona — e.g. `!persona nyx` |
 | `!persona reload` | Reload personas.json from disk |
-| `!mood` | Show active mood and all options |
-| `!mood <name>` | Switch mood — e.g. `!mood stern` |
+| `!mood` | Show active mood and available options |
+| `!mood <n>` | Switch mood — e.g. `!mood stern` |
 
-### Model & logging
+### Model & thinking
 
 | Command | Description |
 |---|---|
 | `!model` | Show current Ollama model |
-| `!model <name>` | Switch model for session — e.g. `!model qwen3:14b` |
-| `!setlog #channel` | Set log channel for session |
+| `!model <n>` | Switch model for session — e.g. `!model qwen3:14b` |
+| `!think` | Show current thinking state |
+| `!think on` / `!think off` | Toggle Ollama reasoning trace |
+| `!think reset` | Drop session override, use YAML value |
 
-### User info
+### Chat gating
+
+Control *when* and *who* Clawy chats with. Moderation always runs regardless.
+
+| Command | Description |
+|---|---|
+| `!quiet` | Show quiet-hours status + window |
+| `!quiet on` / `!quiet off` | Enable/disable quiet hours |
+| `!quiet set 23:00 07:00 Europe/Berlin` | Set window (session) |
+| `!quiet reset` | Drop overrides, use YAML |
+| `!chatroles` | Show chat role allowlist |
+| `!chatroles add <role>` / `!chatroles remove <role>` | Manage allowlist |
+| `!chatroles clear` | Empty allowlist — everyone can chat |
+| `!chatroles reset` | Drop override, use YAML |
+| `!proactive` | Show proactive-reply chance |
+| `!proactive 0.03` | Set to 3% per eligible message |
+| `!proactive off` | Disable proactive replies |
+| `!proactive reset` | Drop override, use YAML |
+
+### Manual moderation
+
+| Command | Description |
+|---|---|
+| `!kick @user [reason]` | Kick a member |
+| `!ban @user [reason]` | Ban a member |
+| `!mute @user [duration] [reason]` | Timeout (e.g. `!mute @x 30m spam`) |
+| `!unmute @user` | Remove a timeout |
+
+### User info & memory
 
 | Command | Description |
 |---|---|
 | `!whois @user` | DB profile: first seen, last seen, message count |
 | `!strikes @user` | Strike count + last 5 moderation events |
 | `!recall @user` | Last 10 chat memory turns |
-| `!forget @user` | Wipe chat memory (mod history untouched) |
+| `!forget @user` | Wipe chat memory (moderation history untouched) |
 
 ### Message moving
 
@@ -527,6 +569,25 @@ Regular users get no response when they try.
 | `!moveto #channel` | Move replied message to channel |
 | `!moveto #channel N` | Move replied message + up to N more from same author |
 | `!movelast @user N #channel` | Move last N messages from user in this channel |
+
+### Activity-based roles
+
+| Command | Description |
+|---|---|
+| `!roles` | List loaded role rules |
+| `!roles reload` | Reload `role_rules.json` from disk |
+| `!roles check @user` | Immediately evaluate rules for a user |
+| `!roles grants @user` | Show which rules have fired for a user |
+| `!roles reset @user <rule_id>` | Clear a grant so the rule can fire again |
+
+### Diagnostics & utilities
+
+| Command | Description |
+|---|---|
+| `!help` | List all commands grouped by function |
+| `!help <command>` | Show detailed usage for a specific command |
+| `!perms` | Show Clawy's permissions in the current channel + role hierarchy |
+| `!setlog #channel` | Set log channel for session |
 
 ---
 
@@ -566,7 +627,10 @@ ollama:
   temperature: 0.75     # 0.0 = deterministic, 1.0 = creative
   num_ctx: 512          # Context window in tokens
   timeout_seconds: 20   # Max wait for Ollama before giving up
-  think: false
+  think: false          # false = fast direct answers (recommended).
+                        # true = run the model's reasoning trace first —
+                        # much slower on CPU. Toggleable via !think.
+                        # Requires Ollama >= 0.9.
 
 # ── Moderation ───────────────────────────────────────────────────────
 moderation:
@@ -592,6 +656,32 @@ moderation:
   mention_window_seconds: 30   # sliding window size in seconds
   mention_reset_seconds: 120   # seconds of quiet before strikes reset
   mention_timeout_seconds: 300 # mute duration on escalation (5 minutes)
+
+# ── Chat gating ──────────────────────────────────────────────────────
+chat:
+  # Role allowlist — which roles can chat with Clawy.
+  # Empty list = everyone can chat (default behavior).
+  # Non-empty = ONLY members of those roles get chat replies.
+  # Moderation applies to everyone regardless of this list.
+  # Role names are case-sensitive and must match Discord exactly.
+  # Runtime overrides: !chatroles add|remove|clear
+  allowed_roles: []
+    # - "Regular"
+    # - "VIP"
+    # - "Staff"
+
+  # Quiet hours — scheduled silence for the chat pipeline.
+  # During quiet hours:
+  #   - Clawy ignores @mentions and direct addresses (stays silent).
+  #   - Proactive replies are suppressed.
+  #   - Moderation, prefilter, blocklist, rate-limiting, role engine all
+  #     keep running normally.
+  # Runtime overrides: !quiet on|off|set|reset
+  quiet_hours:
+    enabled: false
+    timezone: "Europe/Berlin"    # IANA timezone name (see tzdata)
+    start: "23:00"               # 24h format, HH:MM
+    end: "07:00"                 # wraps midnight correctly
 
 # ── Message moving ───────────────────────────────────────────────────
 move:
@@ -644,7 +734,9 @@ discord-bot/
 │
 ├── config/
 │   ├── config.yaml             ← main configuration
-│   └── personas.json           ← personas and moods
+│   ├── personas.json           ← personas and moods
+│   ├── role_rules.json         ← activity-based role assignment rules
+│   └── blocklist.json          ← optional zero-tolerance word list
 │
 ├── core/
 │   ├── config.py               ← loads config.yaml and .env
@@ -654,13 +746,17 @@ discord-bot/
 │   ├── prompts.py              ← builds LLM system/user prompts
 │   ├── prefilter.py            ← fast rule-based pre-filter
 │   ├── executor.py             ← executes actions with guardrails
-│   └── tracking.py             ← in-memory spam and mention rate limiters
+│   ├── tracking.py             ← in-memory spam and mention rate limiters
+│   └── gating.py               ← quiet hours + chat role allowlist helpers
 │
 ├── cogs/
+│   ├── _common.py              ← shared CleanCommandCog base + ack / reply helpers
 │   ├── moderation.py           ← main message listener and router
 │   ├── admin.py                ← all !commands
 │   ├── members.py              ← welcome on member join
-│   └── move.py                 ← webhook-based message moving
+│   ├── move.py                 ← webhook-based message moving
+│   ├── sleep.py                ← !sleep / !wake with auto-wake timer
+│   └── roles.py                ← activity-based role assignment engine
 │
 └── data/
     └── bot.db                  ← SQLite database (auto-created)

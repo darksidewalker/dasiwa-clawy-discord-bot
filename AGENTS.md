@@ -51,7 +51,7 @@ Check Ollama health
 discord-bot/
 ├── main.py                    # Entry point — registers cogs
 ├── config/
-│   ├── config.yaml            # Main config (guild_id, owner_id, modes, rate limits)
+│   ├── config.yaml            # Main config (guild_id, owner_id, modes, rate limits, gating)
 │   ├── personas.json          # Persona definitions (hot-reloadable)
 │   └── role_rules.json        # Activity-based role assignment rules
 ├── core/                      # Internal logic — no Discord API calls here
@@ -62,8 +62,10 @@ discord-bot/
 │   ├── prompts.py             # Builds LLM system/user prompts
 │   ├── prefilter.py           # Fast rule-based pre-LLM filter
 │   ├── executor.py            # Executes actions with guardrails
-│   └── tracking.py            # In-memory spam and mention rate limiters
+│   ├── tracking.py            # In-memory spam and mention rate limiters
+│   └── gating.py              # Quiet hours + chat role allowlist (pure logic)
 └── cogs/                      # Discord event handlers
+    ├── _common.py             # CleanCommandCog base + ack / reply_permanent helpers
     ├── moderation.py          # Main on_message listener (mod + chat router)
     ├── admin.py               # All admin commands (!pause, !mode, !kick, etc.)
     ├── members.py             # Welcome DM on member join
@@ -80,13 +82,16 @@ discord-bot/
 |---|---|
 | Moderation decision (warn/delete/timeout) | ✅ Yes — only if Ollama is reachable |
 | Chat replies | ✅ Yes — only if Ollama is reachable |
+| Proactive (unsolicited) replies | ✅ Yes — dice roll + `proactive_reply_chance` |
 | Move messages | ❌ No — pure Discord webhooks |
 | Rate limiting (spam, mentions) | ❌ No — sliding window counters |
 | Role auto-assignment | ❌ No — SQL activity queries + JSON rules |
 | Hard blocklist enforcement | ❌ No — string matching |
-| Admin commands (!kick, !ban, !mute) | ❌ No — Discord API |
+| Admin commands (!kick, !ban, !mute, !help, etc.) | ❌ No — Discord API |
 | Strike counting | ❌ No — SQL aggregation |
 | Sleep mode | ❌ No — state flag + presence updates |
+| Quiet hours | ❌ No — timezone-aware window check |
+| Chat role allowlist | ❌ No — role name membership |
 
 **Ollama is optional.** If unreachable:
 - Prefilter-based moderation (blocklist, spam) still works
@@ -138,6 +143,59 @@ The LLM can NEVER kick or ban autonomously. If it tries:
 
 Timeouts are capped at `max_autonomous_timeout_seconds` (default: 10 min).
 
+### 5. Clean command handling
+
+Every cog that registers admin `!commands` inherits from `CleanCommandCog`
+(in `cogs/_common.py`) instead of `commands.Cog`. This gives uniform behavior
+for all admin commands:
+
+- **Source cleanup:** the invoking `!command` message is auto-deleted before
+  the command body runs (via `cog_before_invoke`). Non-authorized users also
+  get their command deleted (via a `cog_check` override). Failed parse (bad
+  args, unresolvable member) triggers deletion in `main.py`'s
+  `on_command_error`.
+- **`ack(ctx, text, linger=6)`** — transient reply that self-deletes. Posts
+  in the source channel. For "Paused", "Mode set to X", usage hints, errors.
+- **`reply_permanent(ctx, text)`** — informational reply. Routes to
+  `CFG.log_channel_id` when set and writable (falls back to source channel).
+  A "Sent to #log." breadcrumb stays briefly in source. For `!diag`, `!whois`,
+  `!strikes`, `!perms`, `!persona` listings, etc.
+
+**To add a new gated command:**
+```python
+class MyCog(CleanCommandCog):
+    def is_authorized(self, ctx): return _is_admin(ctx)  # override
+
+    @commands.command(name="foo")
+    async def foo(self, ctx, arg=""):
+        if not arg:
+            await ack(ctx, "Usage: !foo <arg>")
+            return
+        await reply_permanent(ctx, f"Processed {arg}...")
+```
+
+Never write `await ctx.reply(...)` or `await ctx.send(...)` directly in an
+admin cog — always route through `ack()` or `reply_permanent()`.
+
+### 6. Chat gating — quiet hours + role allowlist
+
+The chat pipeline has two independent gates in addition to the Ollama health
+check. Both are pure logic in `core/gating.py`:
+
+- **`in_quiet_hours()`** — True during a configured time window. Handles
+  midnight-crossing windows (e.g. 23:00–07:00). IANA timezone via `zoneinfo`.
+  When True, chat replies AND proactive replies are suppressed. Moderation,
+  prefilter, blocklist, rate-limiting, and the role engine are NOT affected.
+- **`is_chat_allowed(author)`** — True if the author has a role listed in
+  `CFG.chat_allowed_roles`. Empty list = everyone allowed. When False, chat
+  and proactive replies are skipped silently. Moderation still runs.
+
+Gates are consulted in `cogs/moderation.py` in two places: before `_chat()`
+is called (direct address / @mention path) and inside `_moderation_llm`'s
+proactive-throttle block (so unsolicited replies respect the same gates).
+Session overrides for both live in `RuntimeState` and are mutated by the
+`!quiet` and `!chatroles` commands.
+
 ---
 
 ## Database schema (SQLite)
@@ -187,18 +245,33 @@ ollama:
   temperature: 0.6
   num_ctx: 8192
   timeout_seconds: 45
+  think: false                   # run reasoning trace? false = fast direct answers
 
 moderation:
-  spam_threshold: 6            # messages
+  spam_threshold: 6              # messages
   spam_window_seconds: 10
-  mention_max: 4               # @mentions
+  mention_max: 4                 # @mentions
   mention_window_seconds: 30
   mention_timeout_seconds: 300
   max_autonomous_timeout_seconds: 600  # Hard cap on LLM-issued mutes
-  blocklist_enabled: false     # OPT-IN: default off. See config/blocklist.json.example
+  blocklist_enabled: false       # OPT-IN: default off. See config/blocklist.json.example
   blocklist_file: "config/blocklist.json"  # path to word list (only if enabled)
   kick_strike_threshold: 2
   ban_strike_threshold: 4
+  proactive_reply_chance: 0.0    # 0.0 = off, 0.03 = 3% per message
+  proactive_reply_cooldown_seconds: 300
+
+chat:
+  # Role allowlist for chat replies. Empty = everyone chats.
+  # Moderation runs regardless of this list.
+  allowed_roles: []
+    # - "Regular"
+    # - "VIP"
+  quiet_hours:
+    enabled: false
+    timezone: "Europe/Berlin"    # IANA tz name
+    start: "23:00"
+    end: "07:00"                 # wraps midnight correctly
 
 allowed_actions:     # What the LLM can pick
   - reply
@@ -307,7 +380,27 @@ Edit `config/personas.json`, add a new persona or mood, run `!persona reload`.
 
 ### Add a new admin command
 
-Add a `@commands.command()` method in `cogs/admin.py` inside the `AdminCog` class. It auto-registers.
+Add a `@commands.command()` method inside `AdminCog` (or any cog inheriting
+from `CleanCommandCog`). It auto-registers.
+
+Use the shared helpers from `cogs/_common.py` for replies — never `ctx.reply`:
+
+```python
+from ._common import ack, reply_permanent
+
+@commands.command(name="foo")
+async def foo_cmd(self, ctx, arg: str = "") -> None:
+    """Short help shown by !help foo. Keep it under ~10 lines.
+    Usage: !foo <arg>
+    """
+    if not arg:
+        await ack(ctx, "Usage: `!foo <arg>`")  # transient, source channel, 6s
+        return
+    await reply_permanent(ctx, f"Processed {arg}")  # informational, -> log channel
+```
+
+If your new command should appear in `!help`, also add an entry to the
+`groups` list in `help_cmd` in `cogs/admin.py`.
 
 ### Add a new autonomous feature (no LLM)
 
@@ -335,10 +428,13 @@ If LLM calls time out, increase `ollama.timeout_seconds` in config.
 ### DO:
 - Use `STORE` methods for all database access (never raw SQL)
 - Check `CFG.state.paused` and `CFG.state.sleeping` before autonomous actions
+- Check `in_quiet_hours()` and `is_chat_allowed()` before chat/proactive replies
 - Use `await OLLAMA.health()` before calling the LLM
 - Log all moderation actions to `log_channel_id` via `_log_action()`
 - Respect `protected_roles` and `owner_id` in all punishment logic
 - Keep chat memory separate from moderation memory
+- Inherit from `CleanCommandCog` in any cog that registers `!commands`
+- Use `ack()` and `reply_permanent()` from `cogs/_common.py` — never `ctx.reply`
 
 ### DON'T:
 - Let the LLM kick or ban autonomously (flag for human review instead)
@@ -346,12 +442,16 @@ If LLM calls time out, increase `ollama.timeout_seconds` in config.
 - Write to `/mnt/user-data/uploads` or other read-only mounts
 - Use localStorage/sessionStorage in React artifacts (not supported)
 - Assume Ollama is always available
+- Apply chat gates (quiet hours, allowlist) to moderation — gates are
+  chat-only. Moderation must always run regardless.
 
 ### NEVER:
 - Execute SQL directly — always use `STORE` methods
 - Cross moderation and chat data (separate tables for a reason)
 - Skip the executor guardrails when applying actions
 - Hard-code Discord IDs in the code (use config.yaml)
+- Place `think` inside the Ollama `options` block — it's a top-level
+  request field. Putting it under `options` is silently ignored.
 
 ---
 
