@@ -37,17 +37,23 @@ class OllamaClient:
 
     async def generate_json(self, system: str, user: str) -> dict[str, Any] | None:
         """
-        Ask Ollama to return a JSON object. Uses `format: json` which forces
-        valid JSON output on models that support it (llama3.*, qwen2.5, phi3, mistral, ...).
+        Ask Ollama to return a JSON object. The prompt instructs the model to
+        return JSON only; the response is parsed with a fallback extractor that
+        salvages the first {...} block if the model adds surrounding prose.
         Returns the parsed dict, or None on any failure.
         """
         payload = {
             "model": CFG.model,
             "stream": False,
-            "format": "json",
+            # NOTE: "format": "json" is intentionally omitted.
+            # On Qwen3 models it triggers structured-output mode which re-enables
+            # the thinking chain and ignores /no_think, causing 30-120s delays.
+            # The prompt already demands JSON-only output; the extraction below
+            # salvages any stray prose if needed.
             "options": {
                 "temperature": CFG.temperature,
                 "num_ctx": CFG.num_ctx,
+                "think": False,  # Ollama 0.7+: suppress <think> blocks natively
             },
             "messages": [
                 {"role": "system", "content": system},
