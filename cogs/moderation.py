@@ -210,7 +210,16 @@ class ModerationCog(commands.Cog):
     async def _moderation_llm(
         self, message: discord.Message, was_mentioned: bool
     ) -> dict | None:
-        allowed = CFG.allowed_actions | {"ignore", "reply"}
+        # Strip "reply" from the allowed actions when the author is not in the
+        # chat allowlist. This prevents the LLM from chatting back to a
+        # non-allowed user who pings the bot. Other moderation actions
+        # (warn / delete / timeout / role / ignore) remain available so we
+        # can still moderate non-allowed users normally.
+        author_allowed = is_chat_allowed(message.author)
+        if author_allowed:
+            allowed = CFG.allowed_actions | {"ignore", "reply"}
+        else:
+            allowed = (CFG.allowed_actions | {"ignore"}) - {"reply"}
 
         # Throttle: don't ask the LLM about every benign message.
         # If not mentioned, skip unless the content looks noteworthy OR the dice say so.
