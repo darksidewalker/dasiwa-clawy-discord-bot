@@ -40,8 +40,8 @@ ignored_channels:
 ollama:
   model: "qwen3.5:4b"          # newer, better at instruction following and roleplay
   temperature: 0.75            # 0.75 gives expressive moods without breaking JSON
-  num_ctx: 2048                # plenty for persona + 8 turns of history
-  timeout_seconds: 90          # safe margin for CPU inference
+  num_ctx: 512                # plenty for persona + 8 turns of history
+  timeout_seconds: 20          # safe margin for CPU inference
 
 # ---- Moderation ----
 moderation:

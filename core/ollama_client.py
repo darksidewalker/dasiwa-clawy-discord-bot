@@ -37,23 +37,21 @@ class OllamaClient:
 
     async def generate_json(self, system: str, user: str) -> dict[str, Any] | None:
         """
-        Ask Ollama to return a JSON object. The prompt instructs the model to
-        return JSON only; the response is parsed with a fallback extractor that
-        salvages the first {...} block if the model adds surrounding prose.
+        Ask Ollama to return a JSON object. The prompt instructs the model
+        to return JSON only; a fallback extractor salvages the first {...}
+        block if the model adds surrounding prose.
         Returns the parsed dict, or None on any failure.
+
+        NOTE: "format": "json" is intentionally omitted. On Qwen3 models
+        Ollama structured-output mode re-enables the thinking chain and
+        ignores /no_think in the prompt, causing 60-90 s timeouts on CPU.
         """
         payload = {
             "model": CFG.model,
             "stream": False,
-            # NOTE: "format": "json" is intentionally omitted.
-            # On Qwen3 models it triggers structured-output mode which re-enables
-            # the thinking chain and ignores /no_think, causing 30-120s delays.
-            # The prompt already demands JSON-only output; the extraction below
-            # salvages any stray prose if needed.
             "options": {
                 "temperature": CFG.temperature,
                 "num_ctx": CFG.num_ctx,
-                "think": False,  # Ollama 0.7+: suppress <think> blocks natively
             },
             "messages": [
                 {"role": "system", "content": system},
@@ -81,7 +79,7 @@ class OllamaClient:
         try:
             return json.loads(content)
         except json.JSONDecodeError:
-            # Small models sometimes wrap JSON in prose even with format:json set
+            # Small models sometimes wrap JSON in prose — salvage the first {...} block.
             # Try to salvage the first {...} block.
             start = content.find("{")
             end = content.rfind("}")
