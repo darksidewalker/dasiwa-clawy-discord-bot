@@ -3,39 +3,49 @@ services:
     build: .
     image: dasiwa-clawy-discord-bot:latest
     container_name: clawy
-
     restart: unless-stopped
 
-    # ── Volumes ───────────────────────────────────────────────────────
-    # config/ — your config.yaml, personas.json, role_rules.json
-    # data/   — SQLite database (bot.db)
-    # .env    — your Discord token and Ollama URL
-    volumes:
-      - ./config:/app/config:ro        # read-only — bot reads config, never writes it
-      - ./data:/app/data                # read-write — SQLite database lives here
-      - ./.env:/app/.env:ro            # read-only — secrets file
-
-    # ── Networking ────────────────────────────────────────────────────
-    # No ports exposed — the bot connects OUT to Discord and Ollama.
-    # Ollama runs on the host machine outside Docker.
-    # Use host.docker.internal (Docker Desktop) or the host's LAN IP.
+    # ── Token ─────────────────────────────────────────────────────────
+    # Option A: mount a .env file (recommended — keeps token out of compose)
+    # Option B: set it directly here as an environment variable (less secure)
     #
-    # Override OLLAMA_URL here if you don't want to put it in .env:
+    # Option A (default — comment out if using B):
+    # volumes include .env mount below
+    #
+    # Option B — uncomment and fill in:
     # environment:
-    #   - OLLAMA_URL=http://host.docker.internal:11434
+    #   - DISCORD_TOKEN=your-token-here
+    #   - OLLAMA_URL=http://192.168.1.x:11434
 
-    # ── Logging ───────────────────────────────────────────────────────
+    # ── Volumes ───────────────────────────────────────────────────────
+    # config/ is read-only — edit on the host, restart to apply.
+    # data/   is read-write — SQLite database lives here.
+    # .env    is read-only — your Discord token.
+    #
+    # If config/ is empty on first start, the container seeds it from
+    # the baked-in defaults automatically.
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+
+    # ── Ollama ────────────────────────────────────────────────────────
+    # Ollama runs OUTSIDE the container on the host.
+    # host.docker.internal = Docker Desktop (Mac/Windows)
+    # 172.17.0.1           = Linux native Docker (default bridge IP)
+    # 192.168.1.x          = direct LAN IP (always works, recommended)
+    environment:
+      - OLLAMA_URL=http://host.docker.internal:11434
+
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
 
-    # ── Health ────────────────────────────────────────────────────────
-    # The bot has no HTTP server, so we just check the process is alive.
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      test: ["CMD", "python3", "-c", "import sys; sys.exit(0)"]
       interval: 60s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s

@@ -32,7 +32,7 @@
 
 services:
   clawy:
-    image: yourusername/clawy-bot:latest
+    image: darksidewalker/dasiwa-clawy-discord-bot:latest
     container_name: clawy
     restart: unless-stopped
 

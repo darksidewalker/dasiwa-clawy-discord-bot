@@ -97,10 +97,10 @@ See section 15 for model recommendations per GPU.
 Then update the model name in `config/config.yaml`:
 ```yaml
 ollama:
-  model: "qwen3.5:4b"
-  temperature: 0.75
-  num_ctx: 2048
-  timeout_seconds: 90
+  model: "qwen3:8b"
+  temperature: 0.6
+  num_ctx: 8192
+  timeout_seconds: 45
 ```
 
 ---
@@ -562,35 +562,30 @@ ignored_channels:
 
 # ── Ollama ───────────────────────────────────────────────────────────
 ollama:
-  model: "qwen3.5:4b"
-  temperature: 0.75      # 0.0 = deterministic, 1.0 = creative
-  num_ctx: 2048          # Context window in tokens
-  timeout_seconds: 90    # Max wait for Ollama before giving up
+  model: "qwen3:8b"
+  temperature: 0.6       # 0.0 = deterministic, 1.0 = creative
+  num_ctx: 8192          # Context window in tokens
+  timeout_seconds: 45    # Max wait for Ollama before giving up
 
-# ---- Moderation ----
+# ── Moderation ───────────────────────────────────────────────────────
 moderation:
-  # Enable automatic muting from the hard blocklist (see blocklist_file below).
-  # If false (default), the blocklist is ignored entirely — the bot will not
-  # auto-mute anyone based on word matches. You can still moderate via the LLM
-  # or manually with !mute / !kick / !ban.
-  blocklist_enabled: false
+  proactive_reply_chance: 0.0            # 0.0 = off, 0.05 = 5% chance
+  proactive_reply_cooldown_seconds: 300  # Min gap between proactive replies
 
-  # Optional JSON file with words/phrases that trigger automatic muting.
-  # Only read if blocklist_enabled: true above. See config/blocklist.json.example
-  blocklist_file: "config/blocklist.json"
+  default_timeout_seconds: 600   # Default mute length (10 min)
+  kick_strike_threshold: 2       # Strikes needed before kick is allowed
+  ban_strike_threshold: 4        # Strikes needed before ban is allowed
+  strike_window_hours: 24        # How far back strikes are counted
 
-  proactive_reply_cooldown_seconds: 300
-  proactive_reply_chance: 0.0
-  default_timeout_seconds: 600
-  strike_window_hours: 24
-  spam_threshold: 6            # messages in window that trigger spam warning
-  spam_window_seconds: 10
+  hard_blocklist: []             # ["word1", "phrase two"] — instant action
 
-  # ---- Mention rate limit (how often a user can @mention the bot) ----
-  mention_max: 4               # max @mentions allowed within the window
-  mention_window_seconds: 30   # sliding window size in seconds
-  mention_reset_seconds: 120   # seconds of quiet before strikes reset
-  mention_timeout_seconds: 300 # mute duration on escalation (5 minutes)
+  spam_threshold: 6              # Max messages per window
+  spam_window_seconds: 10        # Message spam sliding window
+
+  mention_max: 4                 # Max bot @mentions per window
+  mention_window_seconds: 30     # Mention spam sliding window
+  mention_reset_seconds: 120     # Quiet time before warning resets
+  mention_timeout_seconds: 300   # Mute duration on escalation
 
 # ── Message moving ───────────────────────────────────────────────────
 move:
@@ -616,10 +611,13 @@ allowed_actions:
 
 | GPU | VRAM | Model | Pull command |
 |---|---|---|---|
-| CPU / RTX 3060 - 4070 | 0–12 GB | `qwen3.5:4b` | `ollama pull qwen3.5:4b` |
-| RTX 3090 - 4090 | 16–24 GB | `qwen3.5:9b` | `ollama pull qwen3.5:9b` |
+| RTX 3060 / 4060 | 8 GB | `qwen3:8b` Q4 (~5.2 GB) | `ollama pull qwen3:8b` |
+| RTX 3070 / 4060 Ti | 8 GB | `qwen3:8b` Q4 | `ollama pull qwen3:8b` |
+| RTX 3080 / 4070 | 10–12 GB | `qwen3:8b:q8_0` (~8.9 GB) | `ollama pull qwen3:8b:q8_0` |
+| RTX 3090 / 4080 / 4090 | 16–24 GB | `qwen3:14b` Q4 (~9 GB) | `ollama pull qwen3:14b` |
+| Under 6 GB VRAM | 4–6 GB | `qwen3:4b` (~2.6 GB) | `ollama pull qwen3:4b` |
 
-**Why Qwen3.5?** Best open-weight model at the 4-9B tier for roleplay, instruction
+**Why Qwen3?** Best open-weight model at the 8B tier for roleplay, instruction
 following, and reliable JSON output. Explicitly trained for creative writing and
 multi-turn dialogue.
 
@@ -627,7 +625,7 @@ Qwen3 has a built-in "thinking" mode that the bot disables automatically via
 `/no_think` in the prompt — keeping responses fast and clean.
 
 After pulling a new model, update `ollama.model` in config and restart.
-Or switch mid-session: `!model qwen3.5:9b`
+Or switch mid-session: `!model qwen3:14b`
 
 ---
 
@@ -686,7 +684,7 @@ Then run `!persona reload`.
 
 **Clawy refuses to stay in character ("I'm not interested")**
 This is the small model's safety filter overriding the persona.
-Switch to a larger model: `!model qwen3.5:9b`
+Switch to a larger model: `!model qwen3:8b`
 Confirm `core/prompts.py` has `/no_think\n` at the start of `_ROLEPLAY_FRAME`.
 
 **Ollama is timing out**
