@@ -8,12 +8,16 @@ to delete it. Easy to forget, and non-admin attempts don't get deleted at all.
 Solution: cogs inherit from `CleanCommandCog`. It:
   1. Deletes `ctx.message` BEFORE the command body runs (via cog_before_invoke).
   2. Deletes `ctx.message` when a non-admin fails cog_check.
-  3. Provides `ack()` for short transient replies that self-delete,
-     and `reply_permanent()` for informational output that should stick.
+  3. Provides `ack()` for short transient replies that self-delete in the
+     source channel, and `reply_permanent()` for informational output
+     that routes to the configured log channel (so regular users don't
+     see admin diagnostics like !perms, !whois, !strikes).
 
 Commands should use:
   - `await ack(ctx, "...")`              for "done" / "ok" style confirmations
-  - `await reply_permanent(ctx, "...")`  for output the admin needs to read
+                                          (source channel, 6s, self-deletes)
+  - `await reply_permanent(ctx, "...")`  for admin output that should be kept
+                                          (log channel if set, else source)
 
 Both post as the bot's own Discord identity (Clawy), since that's the voice.
 """
@@ -65,20 +69,60 @@ async def reply_permanent(
     ctx: commands.Context,
     text: str,
 ) -> discord.Message | None:
-    """Informational reply that sticks.
+    """Informational reply meant for admin eyes only.
 
-    Use for !diag, !whois, !strikes, !recall, !persona (listing), !mood (listing),
-    !sleepstatus — anywhere the admin actually needs to read the output.
-    Posts as the bot (Clawy), no reply chain (original command is gone).
+    Routing:
+      - If `CFG.log_channel_id` is set AND it points to a channel the bot
+        can write to AND it is DIFFERENT from the source channel, post there.
+        A tiny breadcrumb ack stays in the source channel ("Sent to #log.").
+      - Otherwise (no log channel, unresolvable, or admin ran the command
+        *in* the log channel), post inline in the source channel.
+
+    Use for !diag, !whois, !strikes, !recall, !persona (listing), !perms,
+    !sleepstatus — anything regular users shouldn't see. Posts as Clawy,
+    no reply chain (the original command is already deleted).
     """
+    # Late import to avoid circular — cogs import _common which would pull CFG.
+    from core.config import CFG
+
+    text = text[:1900]
+    target: discord.abc.Messageable | None = None
+    is_remote = False
+
+    if CFG.log_channel_id and ctx.guild is not None:
+        log_ch = ctx.guild.get_channel(CFG.log_channel_id)
+        if (
+            isinstance(log_ch, discord.TextChannel)
+            and log_ch.id != ctx.channel.id
+            and log_ch.permissions_for(ctx.guild.me).send_messages
+        ):
+            target = log_ch
+            is_remote = True
+
+    if target is None:
+        target = ctx.channel
+
     try:
-        return await ctx.channel.send(
-            text[:1900],
+        sent = await target.send(
+            text,
             allowed_mentions=discord.AllowedMentions.none(),
         )
     except discord.DiscordException as e:
         log.warning("permanent reply send failed: %s", e)
         return None
+
+    # Breadcrumb in the source channel so the admin knows where the reply went.
+    if is_remote:
+        try:
+            await ctx.channel.send(
+                f"{ctx.author.mention} Sent to {target.mention}.",
+                allowed_mentions=discord.AllowedMentions(users=True),
+                delete_after=ACK_LINGER_SECONDS,
+            )
+        except discord.DiscordException:
+            pass
+
+    return sent
 
 
 class CleanCommandCog(commands.Cog):
