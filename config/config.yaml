@@ -38,10 +38,11 @@ ignored_channels:
 # Tuned for persona chat (moods, 1-5 sentence replies) on CPU-only servers.
 # See README for model recommendations per hardware tier.
 ollama:
-  model: "qwen3.5:4b"          # newer, better at instruction following and roleplay
-  temperature: 0.75            # 0.75 gives expressive moods without breaking JSON
+  model: "qwen3.5:4b"         # newer, better at instruction following and roleplay
+  temperature: 0.75           # 0.75 gives expressive moods without breaking JSON
   num_ctx: 512                # plenty for persona + 8 turns of history
-  timeout_seconds: 20          # safe margin for CPU inference
+  timeout_seconds: 20         # safe margin for CPU inference
+  think: false                # Enable or Disable the thinking mode of a model
 
 # ---- Moderation ----
 moderation:
