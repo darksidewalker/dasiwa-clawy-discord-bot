@@ -63,8 +63,8 @@ services:
       - OLLAMA_URL=http://192.168.1.x:11434
 
       # Override the model defined in config.yaml. Leave commented to
-      # use the file's value (default: qwen3:8b).
-      # - OLLAMA_MODEL=qwen3:8b
+      # use the file's value (default: qwen3.5:4b).
+      # - OLLAMA_MODEL=qwen3.5:4b
 
       # Bot mode: moderate_only | chat_and_moderate | chat_only
       # - BOT_MODE=chat_and_moderate

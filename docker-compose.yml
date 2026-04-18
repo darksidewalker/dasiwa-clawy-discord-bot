@@ -28,7 +28,7 @@ services:
       # - GUILD_ID=0
       # - OWNER_ID=0
       # - LOG_CHANNEL_ID=0
-      # - OLLAMA_MODEL=qwen3:8b
+      # - OLLAMA_MODEL=qwen3.5:4b
       # - BOT_MODE=chat_and_moderate
 
     volumes:
