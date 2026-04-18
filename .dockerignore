@@ -13,7 +13,10 @@ env/
 
 # Data and config (mounted as volumes at runtime — not baked in)
 data/
-config/
+# config/ is included so the Dockerfile can bake in defaults.
+# The actual runtime config is always mounted as a volume and overrides these.
+# Secrets (.env) are excluded separately below — never in config/.
+config/blocklist.json
 
 # Secrets — NEVER bake these into an image
 .env
