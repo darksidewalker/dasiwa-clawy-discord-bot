@@ -5,7 +5,9 @@ Clawy moderates your server, chats in a configurable persona, remembers users,
 moves messages between channels, and rate-limits people who spam her.
 Everything runs on your own machine. No cloud, no API costs, no data leaving your server.
 
+### Avatar:
 ![avatar-clawy.png](assets/avatar-clawy.png)
+### Banner:
 ![banner-clawy.png](assets/banner-clawy.png)
 ---
 
