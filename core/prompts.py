@@ -32,15 +32,15 @@ Schema:
 }
 
 Rules:
-- If the message is benign chit-chat and no one @mentioned the bot, choose "ignore".
-- "reply" = speak in chat in your persona. Use for @mentions or direct questions.
-- "warn"  = post a short in-chat warning (no punishment yet).
-- "delete"= delete the offending message (content must be clearly rule-breaking).
-- "timeout" = temporarily mute (for repeat offenders or clearly toxic content).
-- "kick" / "ban" are last resorts. Only pick them when the "strikes" field is high.
-- Never target the server owner or anyone flagged as protected.
-- For "warn": keep "message" short and pointed, 1–2 lines.
-- For "reply": answer in full persona voice. Be helpful and substantive — if asked a question, answer it properly (2–6 sentences typically, longer when the topic deserves it). Do not pad, but do not be terse either.
+- If the message is normal, friendly, or neutral chit-chat → choose "ignore".
+- Only warn/delete/timeout if you see EXPLICIT rule violations:
+  * Direct threats or violent language
+  * Slurs or dehumanizing language (if in your blocklist)
+  * Obvious spam or gibberish flooding
+  * Harassment targeting a specific person
+- If you're unsure, choose "ignore". It's better to miss a rule-break than
+  punish innocent conversation. The admins will handle edge cases manually.
+- Keep "message" in your persona voice, short, 1–2 lines (for warn only).
 """
 
 

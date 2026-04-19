@@ -190,5 +190,31 @@ async def prefilter(message: discord.Message, bot_user_id: int) -> tuple[str, An
             },
         )
 
-    # 6. Otherwise, send to LLM
+    # 6. ALL CAPS spam check
+    if not is_protected and len(message.content) > 50:
+        letters = [c for c in message.content if c.isalpha()]
+        if letters and sum(1 for c in letters if c.isupper()) / len(letters) > 0.5:
+            return (
+                "action",
+                {
+                    "action": "warn",
+                    "reason": "excessive caps (likely yelling)",
+                    "message": "Please use normal capitalization.",
+                    "source": "prefilter:caps",
+                },
+            )
+
+    # 7. User ping spam — more than 3 distinct users mentioned in one message
+    if not is_protected and len(message.mentions) > 3:
+        return (
+            "action",
+            {
+                "action": "warn",
+                "reason": f"mention spam ({len(message.mentions)} users pinged)",
+                "message": "Please don't mention that many people in one message.",
+                "source": "prefilter:mentions",
+            },
+        )
+
+    # 8. Otherwise, send to LLM
     return ("llm", None)

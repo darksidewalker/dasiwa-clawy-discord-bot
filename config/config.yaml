@@ -41,32 +41,25 @@ ollama:
   # Valid Ollama tags for this family: gemma3n:e2b / gemma3n:e4b  (or gemma4:e2b / gemma4:e4b).
   # There is NO "gemma3:e2b" tag — earlier config was wrong and silently 404'd.
   # Run `ollama list` to see what you actually have, and match exactly.
-  model: "gemma3:4b"          # confirmed pulled via `ollama list`
+  model: "gemma4:e4b"          # confirmed pulled via `ollama list`
   temperature: 0.85
-  num_ctx: 8192                # reduced — 4096 may cause OOM/500 on CPU-only
+  num_ctx: 2048                # reduced — 4096 may cause OOM/500 on CPU-only
   num_predict: 320
-  timeout_seconds: 45          # without format:json the model is slower to settle on JSON
+  timeout_seconds: 60          # without format:json the model is slower to settle on JSON
   think: false
   use_json_format: false       # gemma4:e4b crashes (HTTP 500) with format:json — disable it
 
 # ---- Moderation ----
 moderation:
-  # Enable automatic muting from the hard blocklist (see blocklist_file below).
-  # If false (default), the blocklist is ignored entirely — the bot will not
-  # auto-mute anyone based on word matches. You can still moderate via the LLM
-  # or manually with !mute / !kick / !ban.
+  # Prefilter catches: spam rate, ALL CAPS yelling, user ping spam, blocklist.
+  # The LLM will ONLY see messages that pass those filters.
+  # LLM rules: ignore normal chat, only warn on explicit rule-breaking.
   blocklist_enabled: false
-
-  # Optional JSON file with words/phrases that trigger automatic muting.
-  # Only read if blocklist_enabled: true above. See config/blocklist.json.example
   blocklist_file: "config/blocklist.json"
-
-  proactive_reply_cooldown_seconds: 120  # at most once every 2 min per channel
-  proactive_reply_chance: 0.05           # 5% chance she jumps in unprompted
-  default_timeout_seconds: 600
-  strike_window_hours: 24
-  spam_threshold: 6            # messages in window that trigger spam warning
-  spam_window_seconds: 10
+  
+  # Occasional proactive replies — very low rate to feel natural
+  proactive_reply_cooldown_seconds: 300  # at most once every 5 min per channel
+  proactive_reply_chance: 0.02            # 2% chance (1 in 50 messages) — very occasional
   spam_strike_threshold: 3     # total strikes within strike_window_hours that escalate spam from warn → timeout (with delete). Counts ALL prior mod events (warn/timeout/delete/kick/strike), not just spam.
   spam_timeout_seconds: 600    # mute duration when spam escalates
 
