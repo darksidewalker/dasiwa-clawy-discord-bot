@@ -94,17 +94,17 @@ Everything else has sensible defaults. See section 14 for the full reference.
 
 **Step 3 — pull an Ollama model:**
 ```bash
-ollama pull qwen3.5:4b
+ollama pull gemma3:4b
 ```
 See section 15 for model recommendations per GPU.
 
 Then update the model name in `config/config.yaml`:
 ```yaml
 ollama:
-  model: "qwen3.5:4b"
-  temperature: 0.75
-  num_ctx: 512
-  timeout_seconds: 20
+  model: "gemma3:4b"
+  temperature: 0.85
+  num_ctx: 8192
+  timeout_seconds: 45
 ```
 
 ---
@@ -707,26 +707,7 @@ allowed_actions:
 
 ---
 
-## 15. Recommended Ollama models
-
-| GPU | VRAM | Model | Pull command |
-|---|---|---|---|
-| RTX 3060 - 4080 | 6-16 GB | `qwen3.5:4b` | `ollama pull qwen3.5:4b` |
-| Under 6 GB VRAM | 0–6 GB | `qwen3.5:2b`  | `ollama pull qwen3.5:2b` |
-
-**Why Qwen3?** Best open-weight model at the 8B tier for roleplay, instruction
-following, and reliable JSON output. Explicitly trained for creative writing and
-multi-turn dialogue.
-
-Qwen3 has a built-in "thinking" mode that the bot disables automatically via
-`/no_think` in the prompt — keeping responses fast and clean.
-
-After pulling a new model, update `ollama.model` in config and restart.
-Or switch mid-session: `!model qwen3:14b`
-
----
-
-## 16. File layout
+## 15. File layout
 
 ```
 discord-bot/
@@ -768,7 +749,7 @@ discord-bot/
 
 ---
 
-## 17. Troubleshooting
+## 16. Troubleshooting
 
 **Bot is online but does not respond**
 Check `!diag` — is Ollama reachable? Confirm `guild_id` is correct and
