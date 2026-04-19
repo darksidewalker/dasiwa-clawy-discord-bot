@@ -150,6 +150,17 @@ class ModerationCog(commands.Cog):
                              in_quiet_hours(), CFG.chat_enabled)
             return
 
+        # ========== DIRECT CHAT SHORTCUT ==========
+        # When someone directly addresses the bot (@mention or name) AND they
+        # are in the chat allowlist, skip the moderation LLM and go straight
+        # to _chat. This avoids a wasted LLM call and eliminates the chance
+        # of moderation returning "ignore" or failing silently.
+        # Moderation (prefilter: spam, caps, mentions, blocklist) still ran above.
+        if (was_mentioned or self._addresses_bot(message)) and CFG.chat_enabled:
+            if not in_quiet_hours() and is_chat_allowed(message.author):
+                await self._chat(message)
+                return
+
         # ========== MODERATION PATH ==========
         mod_decided_reply = False   # so we don't double-reply when mod already spoke
         if CFG.moderation_enabled:
