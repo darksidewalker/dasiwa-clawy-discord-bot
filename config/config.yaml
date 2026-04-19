@@ -38,12 +38,15 @@ ignored_channels:
 # Tuned for persona chat (moods, 1-5 sentence replies) on CPU-only servers.
 # See README for model recommendations per hardware tier.
 ollama:
-  model: "gemma3:e2b"         # 2B model — small but coherent for chat/persona
-  temperature: 0.85           # 2B models tend toward dry/repetitive — lift slightly for personality
-  num_ctx: 4096               # MUST be ≥ persona + 8 history turns + system prompt; 512 silently truncates
-  num_predict: 320            # max tokens per reply (Ollama default 128 = ~2 short sentences)
-  timeout_seconds: 30         # 2B is fast on CPU but give it room
-  think: false                # Enable or Disable the thinking mode of a model
+  # Valid Ollama tags for this family: gemma3n:e2b / gemma3n:e4b  (or gemma4:e2b / gemma4:e4b).
+  # There is NO "gemma3:e2b" tag — earlier config was wrong and silently 404'd.
+  # Run `ollama list` to see what you actually have, and match exactly.
+  model: "gemma4:e4b"          # confirmed pulled via `ollama list`
+  temperature: 0.85           # lift slightly so small models aren't flat
+  num_ctx: 4096               # persona + 8 history turns + system prompt; low values silently truncate
+  num_predict: 320            # max output tokens (Ollama default 128 = ~2 short sentences)
+  timeout_seconds: 45         # e4b is slower than e2b on CPU — give it room
+  think: false                # no-op on gemma3n (no thinking mode); safe to leave
 
 # ---- Moderation ----
 moderation:

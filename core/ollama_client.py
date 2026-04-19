@@ -40,15 +40,16 @@ class OllamaClient:
         Ask Ollama to return a JSON object. Uses `format: json` which forces
         valid JSON output on models that support it (llama3.*, qwen2.5, phi3, mistral, ...).
         Returns the parsed dict, or None on any failure.
+
+        gemma4 bug: think=false + format="json" causes format to be silently
+        ignored (Ollama issue #15260). Workaround: only send `think` when it
+        is True — omitting it entirely lets format work on gemma4.
+        gemma4:e2b/e4b don't think by default so nothing is lost.
         """
-        payload = {
+        payload: dict[str, Any] = {
             "model": CFG.model,
             "stream": False,
             "format": "json",
-            # `think` is a top-level request flag (Ollama >= 0.9), NOT an
-            # option. Placing it under `options` is silently ignored.
-            # False = no reasoning phase, direct JSON answer — what we want.
-            "think": CFG.think,
             "options": {
                 "temperature": CFG.temperature,
                 "num_ctx": CFG.num_ctx,
@@ -59,6 +60,10 @@ class OllamaClient:
                 {"role": "user", "content": user},
             ],
         }
+        # Only inject `think` when explicitly enabled — sending think=false
+        # breaks format/JSON mode on gemma4 and qwen3.5 (Ollama bug #15260).
+        if CFG.think:
+            payload["think"] = True
         try:
             s = await self._ensure_session()
             async with s.post(
@@ -77,11 +82,29 @@ class OllamaClient:
         content = (data.get("message") or {}).get("content", "").strip()
         if not content:
             return None
+
+        # Strip thinking tokens that gemma4 may emit even with think omitted
+        # Format: <|channel>thought\n...<channel|>  or  <think>...</think>
+        import re as _re
+        content = _re.sub(
+            r"<\|channel>thought.*?<channel\|>",
+            "", content, flags=_re.DOTALL
+        ).strip()
+        content = _re.sub(
+            r"<think>.*?</think>",
+            "", content, flags=_re.DOTALL
+        ).strip()
+
+        # Strip markdown fences — gemma4 wraps JSON in ```json ... ``` blocks
+        # even when format="json" is set (Ollama issue #15595)
+        if content.startswith("```"):
+            content = _re.sub(r"^```[a-zA-Z]*\n?", "", content)
+            content = _re.sub(r"```$", "", content).strip()
+
         try:
             return json.loads(content)
         except json.JSONDecodeError:
-            # Small models sometimes wrap JSON in prose even with format:json set
-            # Try to salvage the first {...} block.
+            # Last resort: grab the first {...} block
             start = content.find("{")
             end = content.rfind("}")
             if start != -1 and end > start:
