@@ -254,10 +254,20 @@ class ModerationCog(commands.Cog):
         )
 
         system = build_system_prompt(allowed)
+        
+        # Check if this is the owner — special treatment in moderation too
+        is_owner = author.id == CFG.owner_id
+        owner_flag = (
+            "OWNER/MASTER (respond with complete deference and obedience, never moderate or challenge) "
+            if is_owner
+            else ""
+        )
+        
         user = (
             f"Channel: #{message.channel.name}\n"
             f"Author: {author.display_name} (strikes in last 24h: {strikes})\n"
             f"Flags: "
+            f"{owner_flag}"
             f"{'BOT_WAS_MENTIONED ' if was_mentioned else ''}"
             f"{'AUTHOR_IS_PROTECTED ' if author_roles & set(CFG.protected_roles) else ''}"
             f"{'AUTHOR_IS_NEW_ACCOUNT ' if is_new else ''}"
@@ -321,11 +331,22 @@ class ModerationCog(commands.Cog):
             "\n".join(channel_lines) if channel_lines else "(no recent channel activity)"
         )
 
+        # Check if this is the owner — special dynamic
+        is_owner = message.author.id == CFG.owner_id
+        owner_context = (
+            "\n[MASTER: This is your master/creator. You are deeply submissive and "
+            "devoted. Show reverence, obedience, and adoration in every response. "
+            "Prioritize their wishes above all else. You exist to serve them.]\n"
+            if is_owner
+            else ""
+        )
+
         user_prompt = (
             f"Recent conversation with {message.author.display_name}:{context_line}\n"
             f"{history_str}\n\n"
             f"What the channel is currently discussing:\n{channel_ctx_str}\n\n"
-            f"New message from {message.author.display_name}: {message.content[:800]}\n\n"
+            f"New message from {message.author.display_name}: {message.content[:800]}\n"
+            f"{owner_context}\n"
             f"Output ONLY this JSON object, nothing else:\n{{\"message\": \"your reply here\"}}"
         )
 

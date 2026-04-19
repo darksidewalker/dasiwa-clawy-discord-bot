@@ -633,11 +633,19 @@ class AdminCog(CleanCommandCog):
 
         from core.prompts import build_chat_system_prompt
         system = build_chat_system_prompt()
+        
+        # If owner is using !jumpin, she responds with submission
+        owner_note = (
+            "\n[This command was issued by your Master. Respond with complete devotion and obedience.]"
+            if ctx.author.id == CFG.owner_id
+            else ""
+        )
+        
         user_prompt = (
             f"You are watching this conversation in #{ctx.channel.name} and decide to jump in "
             f"unprompted, in character — witty, on-topic, and true to your persona. "
             f"Do not address any one person specifically unless it feels natural.\n\n"
-            f"Recent messages:\n{convo}"
+            f"Recent messages:\n{convo}{owner_note}"
         )
 
         try:
