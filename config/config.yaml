@@ -42,11 +42,12 @@ ollama:
   # There is NO "gemma3:e2b" tag — earlier config was wrong and silently 404'd.
   # Run `ollama list` to see what you actually have, and match exactly.
   model: "gemma4:e4b"          # confirmed pulled via `ollama list`
-  temperature: 0.85           # lift slightly so small models aren't flat
-  num_ctx: 4096               # persona + 8 history turns + system prompt; low values silently truncate
-  num_predict: 320            # max output tokens (Ollama default 128 = ~2 short sentences)
-  timeout_seconds: 45         # e4b is slower than e2b on CPU — give it room
-  think: false                # no-op on gemma3n (no thinking mode); safe to leave
+  temperature: 0.85
+  num_ctx: 2048                # reduced — 4096 may cause OOM/500 on CPU-only
+  num_predict: 320
+  timeout_seconds: 60          # without format:json the model is slower to settle on JSON
+  think: false
+  use_json_format: false       # gemma4:e4b crashes (HTTP 500) with format:json — disable it
 
 # ---- Moderation ----
 moderation:

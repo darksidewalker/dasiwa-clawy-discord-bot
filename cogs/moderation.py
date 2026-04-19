@@ -151,7 +151,7 @@ class ModerationCog(commands.Cog):
                 # Check if Ollama is reachable before attempting moderation
                 if not await OLLAMA.health():
                     # Ollama is down — skip LLM moderation, fall through to chat/ignore
-                    log.debug("Ollama unreachable, skipping LLM moderation")
+                    log.warning("Ollama unreachable, skipping LLM moderation")
                     pass
                 else:
                     mod_result = await self._moderation_llm(message, was_mentioned)
@@ -163,10 +163,11 @@ class ModerationCog(commands.Cog):
                         # mod LLM uses to chat with mentioned users.
                         if (mod_result.get("action") == "reply"
                                 and not is_chat_allowed(message.author)):
-                            log.debug(
-                                "mod LLM picked reply for non-allowed author %s — suppressing",
+                            log.info(
+                                "suppressed reply to non-allowed author %s (action=reply)",
                                 message.author,
                             )
+                            return
                             return
                         # LLM returned a decision
                         if mod_result.get("action") == "reply":
@@ -193,12 +194,13 @@ class ModerationCog(commands.Cog):
         # addressed). Moderation continues normally. Matches !sleep semantics
         # but scheduled, not manual.
         if in_quiet_hours():
-            log.debug("quiet hours active — ignoring message from %s", message.author)
+            log.info("quiet hours active — ignoring chat from %s", message.author)
             return
         # Role allowlist: if configured, only members of those roles get replies.
         if not is_chat_allowed(message.author):
-            log.debug("author %s not in chat allowlist — ignoring",
-                      message.author.display_name)
+            log.info("chat blocked — %s not in allowlist (roles: %s)",
+                     message.author,
+                     [r.name for r in getattr(message.author, "roles", [])])
             return
         # ─────────────────────────────────────────────────────────────────
 
@@ -317,7 +319,7 @@ class ModerationCog(commands.Cog):
             f"Recent conversation with {message.author.display_name}:{context_line}\n"
             f"{history_str}\n\n"
             f"New message from {message.author.display_name}: {message.content[:800]}\n\n"
-            f"Reply in character. Return JSON: {{\"message\": \"...\"}}"
+            f"Output ONLY this JSON object, nothing else:\n{{\"message\": \"your reply here\"}}"
         )
 
         try:

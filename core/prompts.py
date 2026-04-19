@@ -19,7 +19,8 @@ from .persona import PERSONAS
 
 
 ACTION_SCHEMA_DOC = """\
-You MUST respond with a single JSON object. No prose, no markdown fences.
+You MUST output ONLY a raw JSON object — no prose before or after it, no markdown fences.
+The ONLY valid output is a JSON object matching this schema exactly:
 
 Schema:
 {
@@ -80,9 +81,9 @@ def build_chat_system_prompt() -> str:
         "chat, engage warmly. Stay in character throughout.\n"
         "Length: 2 to 6 sentences typically. Go longer if the question "
         "needs it (explanations, lists, instructions). Never pad.\n"
-        "Return a single JSON object with one key: "
-        "{\"message\": \"your reply here\"}. "
-        "No prose outside the JSON. No markdown fences."
+        "You MUST output ONLY a raw JSON object — no prose before or after it, "
+        "no markdown fences, no explanation. The ONLY valid output is:\n"
+        "{\"message\": \"your reply here\"}"
     )
 
 

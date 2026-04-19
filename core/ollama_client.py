@@ -49,7 +49,6 @@ class OllamaClient:
         payload: dict[str, Any] = {
             "model": CFG.model,
             "stream": False,
-            "format": "json",
             "options": {
                 "temperature": CFG.temperature,
                 "num_ctx": CFG.num_ctx,
@@ -60,6 +59,11 @@ class OllamaClient:
                 {"role": "user", "content": user},
             ],
         }
+        # format:json causes HTTP 500 on some models (e.g. gemma4:e4b).
+        # Disable via use_json_format: false in config. The JSON extractor
+        # below handles plain-text responses with embedded JSON.
+        if CFG.use_json_format:
+            payload["format"] = "json"
         # Only inject `think` when explicitly enabled — sending think=false
         # breaks format/JSON mode on gemma4 and qwen3.5 (Ollama bug #15260).
         if CFG.think:

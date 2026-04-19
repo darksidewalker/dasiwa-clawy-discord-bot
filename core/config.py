@@ -140,6 +140,11 @@ class Config:
         return int(self.raw.get("ollama", {}).get("num_predict", 256))
 
     @property
+    def use_json_format(self) -> bool:
+        """Whether to send format=json to Ollama. Disable for models that 500 on it (e.g. gemma4)."""
+        return bool(self.raw.get("ollama", {}).get("use_json_format", True))
+
+    @property
     def ollama_timeout(self) -> int:
         return int(self.raw.get("ollama", {}).get("timeout_seconds", 30))
 
