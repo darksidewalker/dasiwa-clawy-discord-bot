@@ -61,8 +61,8 @@ moderation:
   # Only read if blocklist_enabled: true above. See config/blocklist.json.example
   blocklist_file: "config/blocklist.json"
 
-  proactive_reply_cooldown_seconds: 300
-  proactive_reply_chance: 0.0
+  proactive_reply_cooldown_seconds: 120  # at most once every 2 min per channel
+  proactive_reply_chance: 0.05           # 5% chance she jumps in unprompted
   default_timeout_seconds: 600
   strike_window_hours: 24
   spam_threshold: 6            # messages in window that trigger spam warning

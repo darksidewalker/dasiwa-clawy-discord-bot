@@ -168,7 +168,6 @@ class ModerationCog(commands.Cog):
                                 message.author,
                             )
                             return
-                            return
                         # LLM returned a decision
                         if mod_result.get("action") == "reply":
                             mod_decided_reply = True
@@ -315,9 +314,17 @@ class ModerationCog(commands.Cog):
         user_context = await STORE.get_user_context(message.author.id)
         context_line = f"\n[Context: {user_context}]\n" if user_context else ""
 
+        # Live channel context — what the room is talking about right now.
+        # Excludes the triggering message itself (already in "New message" below).
+        channel_lines = list(self._channel_ctx[message.channel.id])[:-1]
+        channel_ctx_str = (
+            "\n".join(channel_lines) if channel_lines else "(no recent channel activity)"
+        )
+
         user_prompt = (
             f"Recent conversation with {message.author.display_name}:{context_line}\n"
             f"{history_str}\n\n"
+            f"What the channel is currently discussing:\n{channel_ctx_str}\n\n"
             f"New message from {message.author.display_name}: {message.content[:800]}\n\n"
             f"Output ONLY this JSON object, nothing else:\n{{\"message\": \"your reply here\"}}"
         )

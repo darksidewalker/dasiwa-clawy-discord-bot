@@ -1,7 +1,9 @@
 """Owner/admin-only runtime controls."""
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import time
 
 import discord
@@ -15,6 +17,8 @@ from core.persona import PERSONAS
 from core.store import STORE
 
 from ._common import CleanCommandCog, ack, reply_permanent
+
+log = logging.getLogger(__name__)
 
 
 def _is_admin(ctx: commands.Context) -> bool:
@@ -579,6 +583,80 @@ class AdminCog(CleanCommandCog):
         lines.append(f"**Top role:** `{top_role}` (position {top_pos})")
         lines.append("Can only moderate members whose highest role is *below* this.")
         await reply_permanent(ctx, "\n".join(lines))
+
+    # ---------- jump into conversation ----------
+    @commands.command(name="jumpin")
+    async def jumpin(self, ctx: commands.Context, count: int = 5) -> None:
+        """Make Clawy jump uninvited into the last N messages of this channel.
+
+        Usage:
+          !jumpin        — react to the last 5 messages
+          !jumpin 10     — react to the last 10 messages
+        """
+        count = max(1, min(count, 20))  # clamp 1-20
+
+        # Delete the !jumpin command message so it looks organic
+        await ctx.message.delete()
+
+        if not await OLLAMA.health():
+            await ack(ctx, "❌ Ollama is not reachable.")
+            return
+
+        # Fetch recent messages (excludes the command message we just deleted)
+        msgs = []
+        async for m in ctx.channel.history(limit=count + 2):
+            if m.author.bot:
+                continue
+            if m.content.startswith(CFG.command_prefix):
+                continue
+            msgs.append(m)
+            if len(msgs) >= count:
+                break
+
+        if not msgs:
+            return
+
+        # Build a conversation snapshot — oldest first
+        msgs.reverse()
+        convo = "\n".join(
+            f"{m.author.display_name}: {m.content[:300]}"
+            for m in msgs
+        )
+
+        from core.prompts import build_chat_system_prompt
+        system = build_chat_system_prompt()
+        user_prompt = (
+            f"You are watching this conversation in #{ctx.channel.name} and decide to jump in "
+            f"unprompted, in character — witty, on-topic, and true to your persona. "
+            f"Do not address any one person specifically unless it feels natural.\n\n"
+            f"Recent messages:\n{convo}\n\n"
+            f"Output ONLY this JSON object, nothing else:\n"
+            f'{"{"}"message": "your reply here"{"}"}'
+        )
+
+        try:
+            async with ctx.channel.typing():
+                result = await asyncio.wait_for(
+                    OLLAMA.generate_json(system, user_prompt),
+                    timeout=CFG.ollama_timeout + 5,
+                )
+        except asyncio.TimeoutError:
+            log.warning("!jumpin: Ollama timed out")
+            return
+
+        if not isinstance(result, dict):
+            log.warning("!jumpin: non-dict result: %r", result)
+            return
+
+        text = str(result.get("message", "")).strip()[:1800]
+        if not text:
+            log.warning("!jumpin: empty message in result")
+            return
+
+        try:
+            await ctx.channel.send(text)
+        except discord.DiscordException as e:
+            log.warning("!jumpin send failed: %s", e)
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(AdminCog(bot))
