@@ -238,6 +238,8 @@ class AdminCog(CleanCommandCog):
             f"**Ollama**: {'✅ reachable' if healthy else '❌ unreachable'} at `{CFG.ollama_url}` ({latency_ms}ms)",
             f"**Model**: `{CFG.model}`  |  **Think**: {'on' if CFG.think else 'off'}",
             f"**Mode**: `{CFG.mode}`  |  **Paused**: {CFG.state.paused}",
+            f"**Owner ID**: `{CFG.owner_id}`  |  **Your ID**: `{ctx.author.id}`"
+            + (" ✅ match" if ctx.author.id == CFG.owner_id else " ❌ NO MATCH"),
             f"**Persona**: `{PERSONAS.active_key}` / mood `{PERSONAS.active_mood}`",
             f"**DB**: `{CFG.db_path}`",
             f"**Allowed actions**: {', '.join(sorted(CFG.allowed_actions))}",
