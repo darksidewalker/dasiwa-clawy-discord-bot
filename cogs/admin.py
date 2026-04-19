@@ -85,6 +85,7 @@ class AdminCog(CleanCommandCog):
                 ("quiet",      "scheduled quiet hours — Clawy silent"),
                 ("chatroles",  "role allowlist — who Clawy chats with"),
                 ("proactive",  "chance of unsolicited replies"),
+                ("jumpin",     "make Clawy jump into the last N channel messages"),
             ]),
             ("Moderation", [
                 ("kick",   "manually kick a member"),
@@ -591,29 +592,36 @@ class AdminCog(CleanCommandCog):
 
         Usage:
           !jumpin        — react to the last 5 messages
-          !jumpin 10     — react to the last 10 messages
+          !jumpin 10     — react to the last 10 messages (max 20)
         """
         count = max(1, min(count, 20))  # clamp 1-20
 
-        # Delete the !jumpin command message so it looks organic
-        await ctx.message.delete()
+        # NOTE: cog_before_invoke already deleted the !jumpin command message
 
         if not await OLLAMA.health():
             await ack(ctx, "❌ Ollama is not reachable.")
             return
 
-        # Fetch recent messages (excludes the command message we just deleted)
-        msgs = []
-        async for m in ctx.channel.history(limit=count + 2):
-            if m.author.bot:
-                continue
-            if m.content.startswith(CFG.command_prefix):
-                continue
-            msgs.append(m)
-            if len(msgs) >= count:
-                break
+        # Fetch recent messages
+        msgs: list[discord.Message] = []
+        try:
+            async for m in ctx.channel.history(limit=count + 5):
+                if m.author.bot:
+                    continue
+                if m.content.startswith(CFG.command_prefix):
+                    continue
+                if not m.content.strip():
+                    continue
+                msgs.append(m)
+                if len(msgs) >= count:
+                    break
+        except discord.DiscordException as e:
+            log.warning("!jumpin: failed to read history: %s", e)
+            await ack(ctx, "❌ Cannot read channel history.")
+            return
 
         if not msgs:
+            await ack(ctx, "No recent messages to react to.")
             return
 
         # Build a conversation snapshot — oldest first
@@ -629,34 +637,40 @@ class AdminCog(CleanCommandCog):
             f"You are watching this conversation in #{ctx.channel.name} and decide to jump in "
             f"unprompted, in character — witty, on-topic, and true to your persona. "
             f"Do not address any one person specifically unless it feels natural.\n\n"
-            f"Recent messages:\n{convo}\n\n"
-            f"Output ONLY this JSON object, nothing else:\n"
-            f'{"{"}"message": "your reply here"{"}"}'
+            f"Recent messages:\n{convo}"
         )
 
         try:
             async with ctx.channel.typing():
                 result = await asyncio.wait_for(
                     OLLAMA.generate_json(system, user_prompt),
-                    timeout=CFG.ollama_timeout + 5,
+                    timeout=CFG.ollama_timeout + 10,
                 )
         except asyncio.TimeoutError:
             log.warning("!jumpin: Ollama timed out")
+            await ack(ctx, "⏱️ Ollama timed out.")
+            return
+        except Exception as e:
+            log.warning("!jumpin: Ollama error: %s", e)
+            await ack(ctx, f"❌ Ollama error: {type(e).__name__}")
             return
 
         if not isinstance(result, dict):
             log.warning("!jumpin: non-dict result: %r", result)
+            await ack(ctx, "❌ Model returned invalid JSON.")
             return
 
         text = str(result.get("message", "")).strip()[:1800]
         if not text:
-            log.warning("!jumpin: empty message in result")
+            log.warning("!jumpin: empty message in result: %r", result)
+            await ack(ctx, "❌ Model returned an empty reply.")
             return
 
         try:
             await ctx.channel.send(text)
         except discord.DiscordException as e:
             log.warning("!jumpin send failed: %s", e)
+            await ack(ctx, f"❌ Send failed: {type(e).__name__}")
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(AdminCog(bot))
