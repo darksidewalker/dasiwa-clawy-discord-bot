@@ -634,19 +634,13 @@ class AdminCog(CleanCommandCog):
         )
 
         from core.prompts import build_chat_system_prompt
-        is_owner = ctx.author.id == CFG.owner_id
-        system = build_chat_system_prompt(is_owner=is_owner)
-
-        owner_note = (
-            "\n[Your Master issued this command. Respond with devotion.]"
-            if is_owner else ""
-        )
+        system = build_chat_system_prompt(is_owner=False)
 
         user_prompt = (
             f"You are watching this conversation in #{ctx.channel.name} and decide to jump in "
             f"unprompted, in character — witty, on-topic, and true to your persona. "
             f"Do not address any one person specifically unless it feels natural.\n\n"
-            f"Recent messages:\n{convo}{owner_note}"
+            f"Recent messages:\n{convo}"
         )
 
         try:
