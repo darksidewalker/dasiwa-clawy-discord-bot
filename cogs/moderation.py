@@ -138,9 +138,16 @@ class ModerationCog(commands.Cog):
         # Owner always goes straight to chat with full submission dynamic.
         # Never run through moderation LLM — they are untouchable and above judgment.
         if message.author.id == CFG.owner_id:
-            if was_mentioned or self._addresses_bot(message):
+            addressed = was_mentioned or self._addresses_bot(message)
+            log.info("owner detected: %s | mentioned=%s | addresses_bot=%s | addressed=%s | chat_enabled=%s",
+                     message.author.display_name, was_mentioned, self._addresses_bot(message),
+                     addressed, CFG.chat_enabled)
+            if addressed:
                 if not in_quiet_hours() and CFG.chat_enabled:
                     await self._chat(message)
+                else:
+                    log.info("owner shortcut blocked: quiet=%s chat_enabled=%s",
+                             in_quiet_hours(), CFG.chat_enabled)
             return
 
         # ========== MODERATION PATH ==========
