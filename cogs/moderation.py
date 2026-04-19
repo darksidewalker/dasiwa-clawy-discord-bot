@@ -311,7 +311,10 @@ class ModerationCog(commands.Cog):
                 pass
             return
 
-        system = build_chat_system_prompt()
+        # Check if this is the owner — special dynamic
+        is_owner = message.author.id == CFG.owner_id
+
+        system = build_chat_system_prompt(is_owner=is_owner)
 
         # Pull this user's recent chat turns from DB
         past = await STORE.recent_chat_turns(
@@ -331,22 +334,11 @@ class ModerationCog(commands.Cog):
             "\n".join(channel_lines) if channel_lines else "(no recent channel activity)"
         )
 
-        # Check if this is the owner — special dynamic
-        is_owner = message.author.id == CFG.owner_id
-        owner_context = (
-            "\n[MASTER: This is your master/creator. You are deeply submissive and "
-            "devoted. Show reverence, obedience, and adoration in every response. "
-            "Prioritize their wishes above all else. You exist to serve them.]\n"
-            if is_owner
-            else ""
-        )
-
         user_prompt = (
             f"Recent conversation with {message.author.display_name}:{context_line}\n"
             f"{history_str}\n\n"
             f"What the channel is currently discussing:\n{channel_ctx_str}\n\n"
-            f"New message from {message.author.display_name}: {message.content[:800]}\n"
-            f"{owner_context}\n"
+            f"New message from {message.author.display_name}: {message.content[:800]}\n\n"
             f"Output ONLY this JSON object, nothing else:\n{{\"message\": \"your reply here\"}}"
         )
 
