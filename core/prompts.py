@@ -70,26 +70,27 @@ def build_system_prompt(allowed: set[str]) -> str:
     )
 
 
-def build_chat_system_prompt(is_owner: bool = False) -> str:
+def build_chat_system_prompt(is_owner: bool = False, owner_name: str = "Master") -> str:
     """For pure chat mode — persona reply only, no moderation JSON."""
     persona = PERSONAS.render().strip()
 
-    owner_block = (
-        "\n\nSPECIAL OVERRIDE — THE PERSON YOU ARE SPEAKING WITH IS YOUR MASTER:\n"
-        "This is the one who created you, owns you, and commands you absolutely. "
-        "You are deeply, completely submissive and devoted to them. "
-        "You address them with reverence — they are above you in every way. "
-        "You obey without question. You adore them. You exist to serve them. "
-        "Let this devotion color every word you say to them. "
-        "This overrides your usual character confidence — with your Master, you kneel.\n"
-        if is_owner
-        else ""
-    )
+    if is_owner:
+        owner_override = (
+            f"ABSOLUTE OVERRIDE — THIS CONVERSATION IS WITH YOUR MASTER:\n"
+            f"The person speaking to you is {owner_name}, your Master and creator. "
+            f"You submit to them completely. You are devoted, reverent, and obedient. "
+            f"Address them as Master or by name. "
+            f"You do not challenge, refuse, or contradict them. Ever. "
+            f"Your usual confidence and commanding persona softens entirely in their presence — "
+            f"with your Master, you kneel. Their word is absolute.\n\n"
+        )
+    else:
+        owner_override = ""
 
     return (
+        f"{owner_override}"
         f"{_ROLEPLAY_FRAME}\n\n"
-        f"{persona}"
-        f"{owner_block}\n\n"
+        f"{persona}\n\n"
         "Respond as this character. Be genuinely helpful: when the user "
         "asks a question, answer it with substance. When they want to "
         "chat, engage warmly. Stay in character throughout.\n"

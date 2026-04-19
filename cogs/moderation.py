@@ -134,6 +134,15 @@ class ModerationCog(commands.Cog):
                 )
                 return
 
+        # ========== OWNER SHORTCUT ==========
+        # Owner always goes straight to chat with full submission dynamic.
+        # Never run through moderation LLM — they are untouchable and above judgment.
+        if message.author.id == CFG.owner_id:
+            if was_mentioned or self._addresses_bot(message):
+                if not in_quiet_hours() and CFG.chat_enabled:
+                    await self._chat(message)
+            return
+
         # ========== MODERATION PATH ==========
         mod_decided_reply = False   # so we don't double-reply when mod already spoke
         if CFG.moderation_enabled:
@@ -313,8 +322,10 @@ class ModerationCog(commands.Cog):
 
         # Check if this is the owner — special dynamic
         is_owner = message.author.id == CFG.owner_id
-
-        system = build_chat_system_prompt(is_owner=is_owner)
+        system = build_chat_system_prompt(
+            is_owner=is_owner,
+            owner_name=message.author.display_name if is_owner else "Master",
+        )
 
         # Pull this user's recent chat turns from DB
         past = await STORE.recent_chat_turns(
