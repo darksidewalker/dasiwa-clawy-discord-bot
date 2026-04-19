@@ -25,6 +25,7 @@ import discord
 from discord.ext import commands, tasks
 
 from core.config import CFG
+from core.gating import in_quiet_hours
 from core.store import STORE
 
 from ._common import CleanCommandCog, ack, reply_permanent
@@ -34,6 +35,7 @@ log = logging.getLogger(__name__)
 # Status text shown while sleeping
 _SLEEP_STATUS = "Resting... do not disturb."
 _AWAKE_STATUS = "Watching the realm."
+_QUIET_STATUS = "🌙 Quiet hours — still watching."
 
 
 def _is_admin(ctx: commands.Context) -> bool:
@@ -79,10 +81,13 @@ class SleepCog(CleanCommandCog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self._wake_task: asyncio.Task | None = None
+        self._in_quiet: bool = False   # tracks last known quiet state to avoid spamming presence
         self._check_autowake.start()
+        self._check_quiet_hours.start()
 
     def cog_unload(self) -> None:
         self._check_autowake.cancel()
+        self._check_quiet_hours.cancel()
         if self._wake_task and not self._wake_task.done():
             self._wake_task.cancel()
 
@@ -108,6 +113,24 @@ class SleepCog(CleanCommandCog):
             )
         except Exception as e:
             log.warning("Failed to set awake presence: %s", e)
+
+    async def _set_quiet_presence(self) -> None:
+        try:
+            await self.bot.change_presence(
+                status=discord.Status.idle,
+                activity=discord.CustomActivity(name=_QUIET_STATUS),
+            )
+        except Exception as e:
+            log.warning("Failed to set quiet presence: %s", e)
+
+    async def _sync_presence(self) -> None:
+        """Set the correct presence based on current state. Sleep > quiet > awake."""
+        if CFG.state.sleeping:
+            await self._set_sleeping_presence()
+        elif in_quiet_hours():
+            await self._set_quiet_presence()
+        else:
+            await self._set_awake_presence()
 
     # ── Core sleep / wake logic ─────────────────────────────────────────
 
@@ -139,7 +162,7 @@ class SleepCog(CleanCommandCog):
         CFG.state.sleeping = False
         CFG.state.wake_at = 0.0
 
-        await self._set_awake_presence()
+        await self._sync_presence()  # restores quiet-hours moon if applicable
 
         if ctx is not None:
             await reply_permanent(ctx, "I am awake.")
@@ -235,14 +258,34 @@ class SleepCog(CleanCommandCog):
     async def _before_check(self) -> None:
         await self.bot.wait_until_ready()
 
+    # ── Quiet hours presence task ────────────────────────────────────────
+
+    @tasks.loop(seconds=30)
+    async def _check_quiet_hours(self) -> None:
+        """Checks every 30s and flips presence when quiet hours start or end."""
+        if CFG.state.sleeping:
+            return  # sleep presence takes priority, don't touch it
+        now_quiet = in_quiet_hours()
+        if now_quiet == self._in_quiet:
+            return  # no change
+        self._in_quiet = now_quiet
+        if now_quiet:
+            log.info("Quiet hours started — setting moon presence")
+            await self._set_quiet_presence()
+        else:
+            log.info("Quiet hours ended — restoring normal presence")
+            await self._set_awake_presence()
+
+    @_check_quiet_hours.before_loop
+    async def _before_quiet_check(self) -> None:
+        await self.bot.wait_until_ready()
+
     # ── Set presence on bot ready ───────────────────────────────────────
 
     @commands.Cog.listener()
     async def on_ready(self) -> None:
-        if CFG.state.sleeping:
-            await self._set_sleeping_presence()
-        else:
-            await self._set_awake_presence()
+        self._in_quiet = in_quiet_hours()
+        await self._sync_presence()
 
 
 async def setup(bot: commands.Bot) -> None:
