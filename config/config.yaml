@@ -38,16 +38,15 @@ ignored_channels:
 # Tuned for persona chat (moods, 1-5 sentence replies) on CPU-only servers.
 # See README for model recommendations per hardware tier.
 ollama:
-  # Valid Ollama tags for this family: gemma3n:e2b / gemma3n:e4b  (or gemma4:e2b / gemma4:e4b).
-  # There is NO "gemma3:e2b" tag — earlier config was wrong and silently 404'd.
-  # Run `ollama list` to see what you actually have, and match exactly.
-  model: "gemma4:e4b"          # confirmed pulled via `ollama list`
-  temperature: 0.85
-  num_ctx: 2048                # reduced — 4096 may cause OOM/500 on CPU-only
-  num_predict: 320
-  timeout_seconds: 60          # without format:json the model is slower to settle on JSON
-  think: false
-  use_json_format: false       # gemma4:e4b crashes (HTTP 500) with format:json — disable it
+  model: "hermes3:3b"       # The model identifier. Hermes 3 3B is optimized for steerability and RP.
+  temperature: 0.85         # Controls randomness. 0.85 is great for expressive Roleplay without losing logic.
+  num_ctx: 4096             # The context window (tokens). 4096 is the "sweet spot" for 7GB available RAM. Higher values significantly increase RAM consumption and slow down CPU processing.
+  num_thread: 6             # Number of CPU threads. Set to 6 to match your physical cores for max efficiency. Avoid exceeding physical core count to prevent system-wide latency.
+  f16_kv: false             # When false, uses lower precision for the KV cache. Crucial for CPU/Low-RAM setups to save roughly 10-20% Memory.
+  num_predict: 320          # Max tokens to generate per response. 320 is plenty for mod-logs and short RP.
+  timeout_seconds: 60       # Timeout for the API request. 60s is safe for 3B models on modern CPUs.
+  think: false              # Disables internal "thinking" blocks if the model supports them (e.g., Gemma 3). Set to false to reduce latency and keep the output clean for the parser.
+  use_json_format: true     # Forces the model to output valid JSON. Hermes 3 supports this well, ensuring your Python parser doesn't fail.
 
 # ---- Moderation ----
 moderation:

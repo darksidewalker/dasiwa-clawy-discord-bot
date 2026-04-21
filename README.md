@@ -627,15 +627,15 @@ ignored_channels:
 
 # ── Ollama ───────────────────────────────────────────────────────────
 ollama:
-  model: "qwen3.5:4b"
-  temperature: 0.75     # 0.0 = deterministic, 1.0 = creative
-  num_ctx: 512          # Context window in tokens
-  timeout_seconds: 20   # Max wait for Ollama before giving up
-  think: false          # false = fast direct answers (recommended).
-                        # true = run the model's reasoning trace first —
-                        # much slower on CPU. Toggleable via !think.
-                        # Requires Ollama >= 0.9.
-
+  model: "hermes3:3b"       # The model identifier. Hermes 3 3B is optimized for steerability and RP.
+  temperature: 0.85         # Controls randomness. 0.85 is great for expressive Roleplay without losing logic.
+  num_ctx: 4096             # The context window (tokens). 4096 is the "sweet spot" for 7GB available RAM. Higher values significantly increase RAM consumption and slow down CPU processing.
+  num_thread: 6             # Number of CPU threads. Set to 6 to match your physical cores for max efficiency. Avoid exceeding physical core count to prevent system-wide latency.
+  f16_kv: false             # When false, uses lower precision for the KV cache. Crucial for CPU/Low-RAM setups to save roughly 10-20% Memory.
+  num_predict: 320          # Max tokens to generate per response. 320 is plenty for mod-logs and short RP.
+  timeout_seconds: 60       # Timeout for the API request. 60s is safe for 3B models on modern CPUs.
+  think: false              # Disables internal "thinking" blocks if the model supports them (e.g., Gemma 3). Set to false to reduce latency and keep the output clean for the parser.
+  use_json_format: true     # Forces the model to output valid JSON. Hermes 3 supports this well, ensuring your Python parser doesn't fail.
 # ── Moderation ───────────────────────────────────────────────────────
 moderation:
   # Enable automatic muting from the hard blocklist (see blocklist_file below).
