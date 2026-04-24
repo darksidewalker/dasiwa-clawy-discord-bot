@@ -31,6 +31,25 @@ protected_roles:
 ignored_channels:
   - "staff-only"
 
+# ---- NSFW / adult channels ----
+# Channels listed here are treated as adult channels. The LLM knows the
+# channel type and adjusts moderation accordingly:
+#   - Bold, sexual, or harsh language is tolerated.
+#   - Adult content is NOT deleted or warned unless it's illegal or harmful.
+#   - Regular rule-breaking (spam, harassment, threats) is still moderated.
+# Channel names are case-sensitive and must match Discord exactly.
+nsfw_channels: []
+  # - "nsfw"
+  # - "nsfw-chat"
+  # - "after-dark"
+
+# ---- Dynamic mood ----
+# When true, Clawy can switch her mood autonomously based on conversation
+# context (e.g. becoming stern when warning someone, amused when something
+# funny happens). The mood persists until the LLM changes it again or an
+# admin uses !mood. Disable to keep moods admin-controlled only.
+dynamic_mood: false
+
 # ---- Persona is in config/personas.json ----
 # Edit that file to add/change personas. Or use !persona and !mood in chat.
 

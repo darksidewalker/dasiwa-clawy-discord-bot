@@ -276,6 +276,28 @@ Changes persist to disk automatically and survive restarts.
 Open `config/personas.json`, add a new entry under `"personas"`, save, run
 `!persona reload` in Discord. No restart needed.
 
+### Dynamic mood switching
+
+When `dynamic_mood: true` is set in `config.yaml` (or toggled with `!dynmood on`),
+the LLM can change its own mood based on conversation context. For example,
+Clawy might switch to `stern` when issuing a warning, `amused` when someone
+says something funny, or `weary` after dealing with repeated rule-breakers.
+
+The mood persists until the LLM changes it again or an admin uses `!mood`.
+The current mood is always visible in `!diag`.
+
+### NSFW / adult channels
+
+Channels listed in `nsfw_channels` (or added with `!nsfw add <n>`) get
+relaxed moderation. The LLM knows the channel is adult and:
+- Tolerates bold, harsh, sexual, or explicit language
+- Does NOT delete or warn for adult content
+- Still moderates spam, harassment, threats, doxxing, and illegal content
+- Matches the edgier tone when chatting in those channels
+
+Non-NSFW channels get standard moderation rules. This prevents the bot from
+accidentally censoring legitimate adult content in channels designed for it.
+
 ---
 
 ## 9. Moderation system
@@ -499,6 +521,7 @@ channel.
 |---|---|
 | `!pause` | Disable all autonomous actions (kill switch) |
 | `!resume` | Re-enable autonomous actions |
+| `!reload` | Hot-reload all configs + clear session overrides |
 | `!sleep` | Sleep indefinitely (ignores everything except admin commands) |
 | `!sleep 30m` / `!sleep 2h` / `!sleep 1h30m` | Sleep for a duration, auto-wake afterwards |
 | `!wake` | Wake immediately |
@@ -518,6 +541,8 @@ channel.
 | `!persona reload` | Reload personas.json from disk |
 | `!mood` | Show active mood and available options |
 | `!mood <n>` | Switch mood — e.g. `!mood stern` |
+| `!dynmood` | Show dynamic mood state |
+| `!dynmood on` / `!dynmood off` | Toggle LLM autonomous mood switching |
 
 ### Model & thinking
 
@@ -547,6 +572,8 @@ Control *when* and *who* Clawy chats with. Moderation always runs regardless.
 | `!proactive 0.03` | Set to 3% per eligible message |
 | `!proactive off` | Disable proactive replies |
 | `!proactive reset` | Drop override, use YAML |
+| `!nsfw` | Show NSFW/adult channel list |
+| `!nsfw add <name>` / `!nsfw remove <name>` | Manage NSFW channels (session) |
 
 ### Manual moderation
 
@@ -624,6 +651,20 @@ protected_roles:
 # ── Ignored channels ─────────────────────────────────────────────────
 ignored_channels:
   - "staff-only"
+
+# ── NSFW / adult channels ───────────────────────────────────────────
+# Channels listed here are treated as adult channels.
+# The LLM tolerates bold/sexual/harsh language in these channels.
+# Spam, harassment, threats, and illegal content are still moderated.
+# Runtime overrides: !nsfw add|remove
+nsfw_channels: []
+  # - "nsfw"
+  # - "nsfw-chat"
+
+# ── Dynamic mood ────────────────────────────────────────────────────
+# When true, the LLM can switch its mood autonomously based on context.
+# Runtime toggle: !dynmood on|off
+dynamic_mood: false
 
 # ── Ollama ───────────────────────────────────────────────────────────
 ollama:

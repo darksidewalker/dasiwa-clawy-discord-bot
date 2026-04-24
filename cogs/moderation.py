@@ -24,6 +24,7 @@ from core.config import CFG
 from core.executor import execute
 from core.gating import in_quiet_hours, is_chat_allowed
 from core.ollama_client import OLLAMA
+from core.persona import PERSONAS
 from core.prefilter import prefilter
 from core.prompts import build_chat_system_prompt, build_system_prompt
 from core.store import STORE
@@ -183,6 +184,9 @@ class ModerationCog(commands.Cog):
                 else:
                     mod_result = await self._moderation_llm(message, was_mentioned)
                     if mod_result is not None:
+                        # Handle dynamic mood switching
+                        self._apply_mood_switch(mod_result)
+                        
                         # Suppress conversational replies to users who are not
                         # in the chat allowlist. Moderation actions (warn,
                         # delete, timeout, role changes, ignore) still apply
@@ -280,7 +284,7 @@ class ModerationCog(commands.Cog):
             author.id, CFG.mod.get("strike_window_hours", 24)
         )
 
-        system = build_system_prompt(allowed)
+        system = build_system_prompt(allowed, channel_name=message.channel.name)
         
         # Check if this is the owner — special treatment in moderation too
         is_owner = author.id == CFG.owner_id
@@ -290,11 +294,16 @@ class ModerationCog(commands.Cog):
             else ""
         )
         
+        # Channel type flag for the user prompt
+        is_nsfw_channel = message.channel.name in CFG.nsfw_channels
+        channel_type_flag = "NSFW_ADULT_CHANNEL " if is_nsfw_channel else ""
+        
         user = (
             f"Channel: #{message.channel.name}\n"
             f"Author: {author.display_name} (strikes in last 24h: {strikes})\n"
             f"Flags: "
             f"{owner_flag}"
+            f"{channel_type_flag}"
             f"{'BOT_WAS_MENTIONED ' if was_mentioned else ''}"
             f"{'AUTHOR_IS_PROTECTED ' if author_roles & set(CFG.protected_roles) else ''}"
             f"{'AUTHOR_IS_NEW_ACCOUNT ' if is_new else ''}"
@@ -343,6 +352,7 @@ class ModerationCog(commands.Cog):
         system = build_chat_system_prompt(
             is_owner=is_owner,
             owner_name=message.author.display_name if is_owner else "Master",
+            channel_name=message.channel.name,
         )
 
         # Pull this user's recent chat turns from DB
@@ -383,6 +393,10 @@ class ModerationCog(commands.Cog):
 
         if not isinstance(result, dict):
             return
+        
+        # Handle dynamic mood switching from chat
+        self._apply_mood_switch(result)
+        
         text = str(result.get("message", "")).strip()
         if not text:
             return
@@ -412,6 +426,22 @@ class ModerationCog(commands.Cog):
     # ================================================================
     # HELPERS
     # ================================================================
+    def _apply_mood_switch(self, result: dict) -> None:
+        """If the LLM included a mood_switch and dynamic_mood is on, apply it."""
+        if not CFG.dynamic_mood:
+            return
+        new_mood = result.pop("mood_switch", None)
+        if not new_mood or not isinstance(new_mood, str):
+            return
+        new_mood = new_mood.strip().lower()
+        old_mood = PERSONAS.active_mood
+        if new_mood == old_mood:
+            return
+        if PERSONAS.set_mood(new_mood):
+            log.info("Dynamic mood switch: %s -> %s", old_mood, new_mood)
+        else:
+            log.debug("LLM suggested unknown mood '%s', ignoring", new_mood)
+
     async def _touch_and_mine(self, message: discord.Message) -> None:
         """
         Record the user in the DB (every message).

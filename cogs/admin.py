@@ -14,11 +14,22 @@ from core.executor import execute_ban, execute_kick, execute_mute
 from core.gating import in_quiet_hours, quiet_status_line
 from core.ollama_client import OLLAMA
 from core.persona import PERSONAS
+from core.prefilter import BLOCKLIST, _blocklist_enabled, _blocklist_path
 from core.store import STORE
 
 from ._common import CleanCommandCog, ack, reply_permanent
 
 log = logging.getLogger(__name__)
+
+
+def _reload_role_rules() -> str:
+    """Reload the role engine; returns a status string."""
+    try:
+        from cogs.roles import RULE_ENGINE
+        n = RULE_ENGINE.reload()
+        return f"role_rules.json ({n} rules)"
+    except Exception as e:
+        return f"role_rules.json (FAILED: {e})"
 
 
 def _is_admin(ctx: commands.Context) -> bool:
@@ -70,6 +81,7 @@ class AdminCog(CleanCommandCog):
             ("Kill switch", [
                 ("pause",   "stop all autonomous actions"),
                 ("resume",  "re-enable autonomous actions"),
+                ("reload",  "hot-reload all configs + clear overrides"),
                 ("sleep",   "silence Clawy (optionally for a duration)"),
                 ("wake",    "wake Clawy from sleep"),
                 ("sleepstatus", "show sleep state"),
@@ -78,6 +90,7 @@ class AdminCog(CleanCommandCog):
                 ("mode",    "show/switch bot mode"),
                 ("persona", "show/switch persona (or reload)"),
                 ("mood",    "show/switch mood for active persona"),
+                ("dynmood", "toggle LLM autonomous mood switching"),
                 ("model",   "show/switch Ollama model (session)"),
                 ("think",   "toggle Ollama reasoning trace on/off"),
             ]),
@@ -86,6 +99,7 @@ class AdminCog(CleanCommandCog):
                 ("chatroles",  "role allowlist — who Clawy chats with"),
                 ("proactive",  "chance of unsolicited replies"),
                 ("jumpin",     "make Clawy jump into the last N channel messages"),
+                ("nsfw",       "manage NSFW/adult channel list"),
             ]),
             ("Moderation", [
                 ("kick",   "manually kick a member"),
@@ -132,6 +146,66 @@ class AdminCog(CleanCommandCog):
     async def resume(self, ctx: commands.Context) -> None:
         CFG.state.paused = False
         await ack(ctx, "Resumed.")
+
+    # ---------- full reload ----------
+    @commands.command(name="reload")
+    async def reload_cmd(self, ctx: commands.Context) -> None:
+        """Hot-reload ALL configs from disk and reset session overrides.
+
+        Reloads: config.yaml, personas.json, role_rules.json, blocklist.
+        Clears: all session overrides (mode, model, think, quiet hours,
+        chat roles, proactive chance). Does NOT restart the bot process
+        or reconnect to Discord — it's a config-level fresh start.
+
+        Usage: !reload
+        """
+        reloaded = []
+
+        # 1. config.yaml
+        try:
+            CFG.reload_yaml()
+            reloaded.append("config.yaml")
+        except Exception as e:
+            log.warning("reload config.yaml failed: %s", e)
+            await ack(ctx, f"config.yaml reload failed: `{e}`")
+            return
+
+        # 2. personas.json
+        try:
+            PERSONAS.reload()
+            reloaded.append("personas.json")
+        except Exception as e:
+            log.warning("reload personas.json failed: %s", e)
+            reloaded.append(f"personas.json (FAILED: {e})")
+
+        # 3. role_rules.json
+        reloaded.append(_reload_role_rules())
+
+        # 4. blocklist
+        if _blocklist_enabled():
+            try:
+                n = BLOCKLIST.reload(_blocklist_path())
+                reloaded.append(f"blocklist.json ({n} entries)")
+            except Exception as e:
+                reloaded.append(f"blocklist.json (FAILED: {e})")
+        else:
+            reloaded.append("blocklist (disabled)")
+
+        # 5. Reset ALL session overrides to force YAML values
+        CFG.state.mode_override = None
+        CFG.state.model_override = None
+        CFG.state.think_override = None
+        CFG.state.quiet_hours_enabled_override = None
+        CFG.state.quiet_hours_start_override = None
+        CFG.state.quiet_hours_end_override = None
+        CFG.state.quiet_hours_timezone_override = None
+        CFG.state.chat_allowed_roles_override = None
+        CFG.state.proactive_chance_override = None
+        CFG.state.paused = False
+        # Note: sleeping state is NOT reset — use !wake for that.
+
+        summary = " | ".join(reloaded)
+        await ack(ctx, f"Reloaded: {summary}. All session overrides cleared.")
 
     # ---------- mode ----------
     @commands.command(name="mode")
@@ -240,7 +314,8 @@ class AdminCog(CleanCommandCog):
             f"**Mode**: `{CFG.mode}`  |  **Paused**: {CFG.state.paused}",
             f"**Owner ID**: `{CFG.owner_id}`  |  **Your ID**: `{ctx.author.id}`"
             + (" ✅ match" if ctx.author.id == CFG.owner_id else " ❌ NO MATCH"),
-            f"**Persona**: `{PERSONAS.active_key}` / mood `{PERSONAS.active_mood}`",
+            f"**Persona**: `{PERSONAS.active_key}` / mood `{PERSONAS.active_mood}`"
+            + f"  |  **Dynamic mood**: {'on' if CFG.dynamic_mood else 'off'}",
             f"**DB**: `{CFG.db_path}`",
             f"**Allowed actions**: {', '.join(sorted(CFG.allowed_actions))}",
             f"**Quiet hours**: "
@@ -250,6 +325,8 @@ class AdminCog(CleanCommandCog):
             f"**Chat allowlist**: "
             + (", ".join(CFG.chat_allowed_roles) if CFG.chat_allowed_roles else "everyone"),
             f"**Proactive chance**: {CFG.proactive_reply_chance:.3f}",
+            f"**NSFW channels**: "
+            + (", ".join(CFG.nsfw_channels) if CFG.nsfw_channels else "(none)"),
         ]
         await reply_permanent(ctx, "\n".join(lines))
 
@@ -545,6 +622,83 @@ class AdminCog(CleanCommandCog):
         CFG.state.proactive_chance_override = val
         await ack(ctx, f"Proactive chance set to {val:.3f} ({val*100:.1f}%).")
 
+    # ---------- NSFW channel management ----------
+    @commands.command(name="nsfw")
+    async def nsfw_cmd(self, ctx: commands.Context, sub: str = "", *, channel_name: str = "") -> None:
+        """Manage NSFW/adult channel list (session-only).
+
+        Usage:
+          !nsfw                   show NSFW channels
+          !nsfw add <name>        add a channel name
+          !nsfw remove <name>     remove a channel name
+        """
+        if not sub:
+            channels = CFG.nsfw_channels
+            if channels:
+                await reply_permanent(ctx,
+                    f"**NSFW channels:** {', '.join(channels)}\n"
+                    f"Adult content is tolerated in these channels."
+                )
+            else:
+                await reply_permanent(ctx, "No NSFW channels configured. Use `!nsfw add <name>` to add one.")
+            return
+        s = sub.strip().lower()
+        name = channel_name.strip().lstrip("#") if channel_name else ""
+        if s == "add":
+            if not name:
+                await ack(ctx, "Usage: `!nsfw add <channel-name>`")
+                return
+            current = list(CFG.raw.get("nsfw_channels", []))
+            if name in current:
+                await ack(ctx, f"`{name}` is already in the NSFW list.")
+                return
+            current.append(name)
+            CFG.raw["nsfw_channels"] = current
+            await ack(ctx, f"Added `{name}` to NSFW channels (session-only).")
+            return
+        if s == "remove":
+            if not name:
+                await ack(ctx, "Usage: `!nsfw remove <channel-name>`")
+                return
+            current = list(CFG.raw.get("nsfw_channels", []))
+            if name not in current:
+                await ack(ctx, f"`{name}` is not in the NSFW list.")
+                return
+            current.remove(name)
+            CFG.raw["nsfw_channels"] = current
+            await ack(ctx, f"Removed `{name}` from NSFW channels.")
+            return
+        await ack(ctx, "Usage: `!nsfw [add|remove <name>]`")
+
+    # ---------- dynamic mood toggle ----------
+    @commands.command(name="dynmood")
+    async def dynmood_cmd(self, ctx: commands.Context, arg: str = "") -> None:
+        """Toggle dynamic mood switching. When on, the LLM can change
+        its own mood based on conversation context.
+
+        Usage:
+          !dynmood           show current state
+          !dynmood on        enable
+          !dynmood off       disable
+        """
+        if not arg:
+            state = "on" if CFG.dynamic_mood else "off"
+            await reply_permanent(ctx,
+                f"**Dynamic mood:** {state}\n"
+                f"When on, the LLM can switch moods autonomously based on context.\n"
+                f"Current mood: **{PERSONAS.active_mood}**"
+            )
+            return
+        a = arg.strip().lower()
+        if a in ("on", "true", "1", "yes", "enable"):
+            CFG.raw["dynamic_mood"] = True
+            await ack(ctx, "Dynamic mood enabled. The LLM can now switch moods on its own.")
+        elif a in ("off", "false", "0", "no", "disable"):
+            CFG.raw["dynamic_mood"] = False
+            await ack(ctx, "Dynamic mood disabled. Only `!mood` changes moods now.")
+        else:
+            await ack(ctx, "Usage: `!dynmood on` / `!dynmood off`")
+
     @commands.command(name="perms")
     async def perms(self, ctx: commands.Context) -> None:
         """Show which permissions Clawy has in THIS channel."""
@@ -634,7 +788,7 @@ class AdminCog(CleanCommandCog):
         )
 
         from core.prompts import build_chat_system_prompt
-        system = build_chat_system_prompt(is_owner=False)
+        system = build_chat_system_prompt(is_owner=False, channel_name=ctx.channel.name)
 
         user_prompt = (
             f"You are watching this conversation in #{ctx.channel.name} and decide to jump in "

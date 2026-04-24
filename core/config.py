@@ -53,6 +53,11 @@ class Config:
             raw = yaml.safe_load(f) or {}
         return cls(raw=raw)
 
+    def reload_yaml(self) -> None:
+        """Re-read config.yaml from disk. Keeps runtime state untouched."""
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            self.raw = yaml.safe_load(f) or {}
+
     # ---- env ----
     @property
     def discord_token(self) -> str:
@@ -89,6 +94,16 @@ class Config:
     @property
     def ignored_channels(self) -> list[str]:
         return list(self.raw.get("ignored_channels", []))
+
+    @property
+    def nsfw_channels(self) -> list[str]:
+        """Channel names marked as NSFW/adult. Moderation is relaxed for adult content there."""
+        return list(self.raw.get("nsfw_channels", []))
+
+    @property
+    def dynamic_mood(self) -> bool:
+        """If True, the LLM can autonomously switch its mood based on conversation context."""
+        return bool(self.raw.get("dynamic_mood", False))
 
     # ---- mode ----
     @property

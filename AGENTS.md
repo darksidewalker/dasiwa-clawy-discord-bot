@@ -127,6 +127,8 @@ A persona's `key` and `name` may differ — e.g. `key="librarian"` `name="Margot
 - `personas.json` — `!persona reload`
 - `role_rules.json` — `!roles reload`
 - Both reload without restarting the bot.
+- `!reload` — reloads ALL configs at once (config.yaml, personas.json,
+  role_rules.json, blocklist) and clears all session overrides.
 
 ### 3. Graceful degradation
 

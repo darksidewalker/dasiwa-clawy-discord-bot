@@ -28,7 +28,8 @@ Schema:
   "reason":   string,   // <= 140 chars, why you chose this action
   "message":  string,   // optional — required when action is "reply" or "warn"
   "role":     string,   // optional — role NAME for assign_role / remove_role
-  "duration_seconds": integer  // optional — for "timeout", default 600
+  "duration_seconds": integer,  // optional — for "timeout", default 600
+  "mood_switch": string // optional — switch your mood (only if dynamic_mood is enabled)
 }
 
 Rules:
@@ -57,9 +58,41 @@ _ROLEPLAY_FRAME = (
 )
 
 
-def build_system_prompt(allowed: set[str]) -> str:
+def build_system_prompt(allowed: set[str], *, channel_name: str = "") -> str:
     persona = PERSONAS.render().strip()
     allowed_list = ", ".join(sorted(allowed)) or "ignore"
+
+    # NSFW channel context
+    nsfw_note = ""
+    if channel_name and channel_name in CFG.nsfw_channels:
+        nsfw_note = (
+            "\n\nCHANNEL TYPE: NSFW / ADULT\n"
+            "This is an adult channel. Adjust your moderation accordingly:\n"
+            "- Bold, harsh, sexual, or explicit language is NORMAL here and must NOT be punished.\n"
+            "- Do NOT delete, warn, or timeout for adult content, crude humor, or strong language.\n"
+            "- STILL moderate: spam, harassment targeting individuals, threats of real violence, "
+            "illegal content, doxxing, and other actual rule violations.\n"
+            "- If you reply, match the channel's tone — you can be bolder and more provocative.\n"
+        )
+    elif channel_name:
+        nsfw_note = (
+            "\n\nCHANNEL TYPE: NORMAL (not adult)\n"
+            "Standard moderation rules apply. Explicit sexual content or excessively "
+            "harsh/vulgar language may warrant moderation.\n"
+        )
+
+    # Dynamic mood
+    mood_note = ""
+    if CFG.dynamic_mood:
+        available = ", ".join(PERSONAS.list_moods())
+        mood_note = (
+            f"\n\nDYNAMIC MOOD: You may include \"mood_switch\": \"<mood>\" in your JSON "
+            f"to change your emotional tone for future interactions. Use this naturally — "
+            f"switch when the conversation warrants it (e.g. become stern when warning, "
+            f"amused when something is funny, weary after repeated offenses). "
+            f"Available moods: {available}\n"
+        )
+
     return (
         f"{_ROLEPLAY_FRAME}\n\n"
         f"{persona}\n\n"
@@ -67,16 +100,34 @@ def build_system_prompt(allowed: set[str]) -> str:
         f"You decide what action to take on each message shown to you.\n\n"
         f"Allowed actions: {allowed_list}\n\n"
         f"{ACTION_SCHEMA_DOC}"
+        f"{nsfw_note}"
+        f"{mood_note}"
     )
 
 
-def build_chat_system_prompt(is_owner: bool = False, owner_name: str = "Master") -> str:
+def build_chat_system_prompt(is_owner: bool = False, owner_name: str = "Master", *, channel_name: str = "") -> str:
     """For pure chat mode — persona reply only, no moderation JSON."""
     persona = PERSONAS.render().strip()
 
+    # NSFW channel tone hint
+    nsfw_hint = ""
+    if channel_name and channel_name in CFG.nsfw_channels:
+        nsfw_hint = (
+            "This is an NSFW/adult channel. You can be bolder, more provocative, "
+            "and match the edgier tone of the room. Explicit language is fine here.\n"
+        )
+
+    # Dynamic mood — include mood_switch option in chat JSON
+    mood_json_note = ""
+    if CFG.dynamic_mood:
+        available = ", ".join(PERSONAS.list_moods())
+        mood_json_note = (
+            f"You may optionally include a \"mood_switch\" field to change your emotional "
+            f"tone for future interactions. Available moods: {available}\n"
+            f"Example: {{\"message\": \"...\", \"mood_switch\": \"amused\"}}\n"
+        )
+
     if is_owner:
-        # Get only the character's identity (name, appearance) from the persona,
-        # then REPLACE the personality/tone entirely with submission.
         char_name = PERSONAS.active_name()
         prompt = (
             f"{_ROLEPLAY_FRAME}\n\n"
@@ -91,16 +142,19 @@ def build_chat_system_prompt(is_owner: bool = False, owner_name: str = "Master")
             f"- You never challenge, contradict, or refuse them.\n"
             f"- You show warmth, loyalty, and deep affection in every response.\n"
             f"- You still speak eloquently, but with humility instead of authority.\n\n"
+            f"{nsfw_hint}"
             f"Respond as this character. Be genuinely helpful and attentive to your Master.\n"
             f"Length: 2 to 6 sentences typically. Go longer if needed.\n"
             f"You MUST output ONLY a raw JSON object — no prose before or after it, "
             f"no markdown fences, no explanation. The ONLY valid output is:\n"
-            f"{{\"message\": \"your reply here\"}}"
+            f"{{\"message\": \"your reply here\"}}\n"
+            f"{mood_json_note}"
         )
     else:
         prompt = (
             f"{_ROLEPLAY_FRAME}\n\n"
             f"{persona}\n\n"
+            f"{nsfw_hint}"
             "Respond as this character. Be genuinely helpful: when the user "
             "asks a question, answer it with substance. When they want to "
             "chat, engage warmly. Stay in character throughout.\n"
@@ -108,7 +162,8 @@ def build_chat_system_prompt(is_owner: bool = False, owner_name: str = "Master")
             "needs it (explanations, lists, instructions). Never pad.\n"
             "You MUST output ONLY a raw JSON object — no prose before or after it, "
             "no markdown fences, no explanation. The ONLY valid output is:\n"
-            "{\"message\": \"your reply here\"}"
+            "{\"message\": \"your reply here\"}\n"
+            f"{mood_json_note}"
         )
 
     return prompt
