@@ -93,6 +93,7 @@ async def _main() -> None:
     await bot.load_extension("cogs.admin")
     await bot.load_extension("cogs.members")
     await bot.load_extension("cogs.move")
+    await bot.load_extension("cogs.purge")
     await bot.load_extension("cogs.sleep")
     await bot.load_extension("cogs.roles")
 

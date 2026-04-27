@@ -2,7 +2,7 @@
 
 An autonomous Discord bot powered by a locally-hosted Ollama model.
 Clawy moderates your server, chats in a configurable persona, remembers users,
-moves messages between channels, and rate-limits people who spam her.
+moves and purges messages between channels, and rate-limits people who spam her.
 Everything runs on your own machine. No cloud, no API costs, no data leaving your server.
 
 ### Avatar:
@@ -23,13 +23,14 @@ Everything runs on your own machine. No cloud, no API costs, no data leaving you
 8. [Persona & mood system](#8-persona--mood-system)
 9. [Moderation system](#9-moderation-system)
 10. [Message moving](#10-message-moving)
-11. [Rate limiting & anti-spam](#11-rate-limiting--anti-spam)
-12. [Memory & database](#12-memory--database)
-13. [All admin commands](#13-all-admin-commands)
-14. [Full config reference](#14-full-config-reference)
-15. [Recommended Ollama models](#15-recommended-ollama-models)
-16. [File layout](#16-file-layout)
-17. [Troubleshooting](#17-troubleshooting)
+11. [Message purging](#11-message-purging)
+12. [Rate limiting & anti-spam](#12-rate-limiting--anti-spam)
+13. [Memory & database](#13-memory--database)
+14. [All admin commands](#14-all-admin-commands)
+15. [Full config reference](#15-full-config-reference)
+16. [Recommended Ollama models](#16-recommended-ollama-models)
+17. [File layout](#17-file-layout)
+18. [Troubleshooting](#18-troubleshooting)
 
 ---
 
@@ -276,28 +277,6 @@ Changes persist to disk automatically and survive restarts.
 Open `config/personas.json`, add a new entry under `"personas"`, save, run
 `!persona reload` in Discord. No restart needed.
 
-### Dynamic mood switching
-
-When `dynamic_mood: true` is set in `config.yaml` (or toggled with `!dynmood on`),
-the LLM can change its own mood based on conversation context. For example,
-Clawy might switch to `stern` when issuing a warning, `amused` when someone
-says something funny, or `weary` after dealing with repeated rule-breakers.
-
-The mood persists until the LLM changes it again or an admin uses `!mood`.
-The current mood is always visible in `!diag`.
-
-### NSFW / adult channels
-
-Channels listed in `nsfw_channels` (or added with `!nsfw add <n>`) get
-relaxed moderation. The LLM knows the channel is adult and:
-- Tolerates bold, harsh, sexual, or explicit language
-- Does NOT delete or warn for adult content
-- Still moderates spam, harassment, threats, doxxing, and illegal content
-- Matches the edgier tone when chatting in those channels
-
-Non-NSFW channels get standard moderation rules. This prevents the bot from
-accidentally censoring legitimate adult content in channels designed for it.
-
 ---
 
 ## 9. Moderation system
@@ -439,7 +418,74 @@ Move the last N messages from a user in the current channel:
 
 ---
 
-## 11. Rate limiting & anti-spam
+## 11. Message purging
+
+Bulk-delete recent messages in any channel from a single admin command.
+Designed to be triggered from a private backstage/log channel: an admin can
+sweep `#general` from `#mod-room` without ever needing to open the target
+channel.
+
+**Purging is admin-only and never autonomous.** The LLM has no path to it.
+Its own moderation actions are still capped at deleting the single message
+it judged on, exactly as before — bulk deletion is always a deliberate
+human decision. Non-admins typing the command get it silently deleted, the
+same as `!kick`.
+
+What admins see in the log channel:
+- One audit line per purge: how many messages, in which channel, by which
+  admin, optionally targeting a specific user, plus a per-author breakdown
+  when no `@user` filter was used.
+
+What regular users see:
+- Nothing. The original messages are simply gone. No notice is posted,
+  unlike `!moveto` which announces the move.
+
+The admin command message itself is deleted instantly.
+
+### `!purge` — channel sweep
+
+Delete the last N messages in a channel:
+```
+!purge #channel N
+```
+
+Optional `@user` filter — only delete that user's messages:
+```
+!purge #channel N @user
+```
+
+Use this when you need to clear a flood, raid, or argument without caring
+who said what.
+
+### `!purgeuser` — user-focused
+
+Delete the last N messages from a specific user. Channel defaults to where
+you typed the command, or specify one explicitly:
+```
+!purgeuser @user N             # in this channel
+!purgeuser @user N #channel    # in another channel
+```
+
+Use this from a backstage channel to clean up after one user across the
+server without exposing your moderation in their channel.
+
+### Limits and protections
+
+- N is capped at `move.max_batch` in `config.yaml` (default: **25**).
+- Messages from **protected users** (owner, server owner, members of any
+  `protected_roles`) are skipped silently, even if explicitly targeted.
+  They're listed in the audit log so you know who was spared.
+- Discord's bulk-delete API only works on messages **younger than 14 days**.
+  Older ones are deleted one at a time (slower; still works, just not
+  instant for ancient threads).
+- Clawy needs **Read Message History** and **Manage Messages** in the
+  *target* channel — checks run there, not where the command was typed.
+- Every purge is written to the `bot_actions` table for audit, even if the
+  log channel is disabled.
+
+---
+
+## 12. Rate limiting & anti-spam
 
 ### Message volume spam
 
@@ -464,7 +510,7 @@ Protected users (admins, owner, protected roles) are completely exempt.
 
 ---
 
-## 12. Memory & database
+## 13. Memory & database
 
 SQLite at `data/bot.db` (WAL mode, async-safe, created automatically).
 Moderation memory and chat memory are in separate tables and never mixed.
@@ -497,7 +543,7 @@ when chatting so Clawy remembers what was said earlier in the conversation.
 
 ---
 
-## 13. All admin commands
+## 14. All admin commands
 
 All commands require **Administrator** permission or being `owner_id`.
 Regular users get no response when they try — their `!command` message is
@@ -521,7 +567,6 @@ channel.
 |---|---|
 | `!pause` | Disable all autonomous actions (kill switch) |
 | `!resume` | Re-enable autonomous actions |
-| `!reload` | Hot-reload all configs + clear session overrides |
 | `!sleep` | Sleep indefinitely (ignores everything except admin commands) |
 | `!sleep 30m` / `!sleep 2h` / `!sleep 1h30m` | Sleep for a duration, auto-wake afterwards |
 | `!wake` | Wake immediately |
@@ -541,8 +586,6 @@ channel.
 | `!persona reload` | Reload personas.json from disk |
 | `!mood` | Show active mood and available options |
 | `!mood <n>` | Switch mood — e.g. `!mood stern` |
-| `!dynmood` | Show dynamic mood state |
-| `!dynmood on` / `!dynmood off` | Toggle LLM autonomous mood switching |
 
 ### Model & thinking
 
@@ -572,8 +615,6 @@ Control *when* and *who* Clawy chats with. Moderation always runs regardless.
 | `!proactive 0.03` | Set to 3% per eligible message |
 | `!proactive off` | Disable proactive replies |
 | `!proactive reset` | Drop override, use YAML |
-| `!nsfw` | Show NSFW/adult channel list |
-| `!nsfw add <name>` / `!nsfw remove <name>` | Manage NSFW channels (session) |
 
 ### Manual moderation
 
@@ -601,6 +642,17 @@ Control *when* and *who* Clawy chats with. Moderation always runs regardless.
 | `!moveto #channel N` | Move replied message + up to N more from same author |
 | `!movelast @user N #channel` | Move last N messages from user in this channel |
 
+### Message purging
+
+| Command | Description |
+|---|---|
+| `!purge #channel N` | Delete the last N messages in `#channel` |
+| `!purge #channel N @user` | Delete the last N messages in `#channel` from `@user` only |
+| `!purgeuser @user N` | Delete the last N messages from `@user` in this channel |
+| `!purgeuser @user N #channel` | Delete the last N messages from `@user` in `#channel` |
+
+Capped at `move.max_batch` messages per call. Protected users are always skipped.
+
 ### Activity-based roles
 
 | Command | Description |
@@ -622,7 +674,7 @@ Control *when* and *who* Clawy chats with. Moderation always runs regardless.
 
 ---
 
-## 14. Full config reference
+## 15. Full config reference
 
 `config/config.yaml`:
 
@@ -651,20 +703,6 @@ protected_roles:
 # ── Ignored channels ─────────────────────────────────────────────────
 ignored_channels:
   - "staff-only"
-
-# ── NSFW / adult channels ───────────────────────────────────────────
-# Channels listed here are treated as adult channels.
-# The LLM tolerates bold/sexual/harsh language in these channels.
-# Spam, harassment, threats, and illegal content are still moderated.
-# Runtime overrides: !nsfw add|remove
-nsfw_channels: []
-  # - "nsfw"
-  # - "nsfw-chat"
-
-# ── Dynamic mood ────────────────────────────────────────────────────
-# When true, the LLM can switch its mood autonomously based on context.
-# Runtime toggle: !dynmood on|off
-dynamic_mood: false
 
 # ── Ollama ───────────────────────────────────────────────────────────
 ollama:
@@ -748,7 +786,7 @@ allowed_actions:
 
 ---
 
-## 15. File layout
+## 17. File layout
 
 ```
 discord-bot/
@@ -790,7 +828,7 @@ discord-bot/
 
 ---
 
-## 16. Troubleshooting
+## 18. Troubleshooting
 
 **Bot is online but does not respond**
 Check `!diag` — is Ollama reachable? Confirm `guild_id` is correct and

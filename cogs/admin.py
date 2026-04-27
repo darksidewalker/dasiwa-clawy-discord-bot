@@ -117,6 +117,10 @@ class AdminCog(CleanCommandCog):
                 ("moveto",   "move replied message (+ N) to a channel"),
                 ("movelast", "move a user's last N messages to a channel"),
             ]),
+            ("Message purging", [
+                ("purge",     "delete last N messages in a channel (optional @user filter)"),
+                ("purgeuser", "delete last N messages from a user in a channel"),
+            ]),
             ("Roles engine", [
                 ("roles",    "manage activity-based role rules"),
             ]),
