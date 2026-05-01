@@ -81,6 +81,14 @@ async def _try_dm(user: discord.abc.User, text: str) -> None:
         log.debug("DM to %s failed: %s", user, e)
 
 
+def _rule_id_for_role(role_name: str) -> str | None:
+    """Find the rule id that grants the given role name. None if no rule grants it."""
+    for r in RULE_ENGINE.rules():
+        if r.get("action", {}).get("grant_role") == role_name:
+            return r["id"]
+    return None
+
+
 async def _apply_rule(
     rule: dict[str, Any],
     member: discord.Member,
@@ -111,9 +119,15 @@ async def _apply_rule(
         log.warning("Rule '%s': bot's top role is not above '%s'", rule_id, role_name)
         return False
 
-    # Already has the role
+    # Already has the role (e.g. assigned manually, or before a restart with empty grant table)
     if role in member.roles:
         await STORE.set_role_grant(member.id, rule_id)  # mark so we don't keep checking
+        # Also backfill grants for any "lower tier" rules this rule supersedes,
+        # so they don't fire after a restart when the grant table is empty.
+        for superseded_role_name in action.get("remove_roles", []):
+            superseded_rule_id = _rule_id_for_role(superseded_role_name)
+            if superseded_rule_id:
+                await STORE.set_role_grant(member.id, superseded_rule_id)
         return False
 
     # Grant role
@@ -123,7 +137,9 @@ async def _apply_rule(
         log.warning("Rule '%s': missing permission to grant '%s'", rule_id, role_name)
         return False
 
-    # Remove specified roles (upgrades)
+    # Remove specified roles (upgrades) and backfill their grant records,
+    # so lower-tier rules don't fire again on restart even if the role
+    # removal silently failed or someone manually restored a lower role.
     for remove_name in action.get("remove_roles", []):
         remove_role = discord.utils.get(guild.roles, name=remove_name)
         if remove_role and remove_role in member.roles:
@@ -131,6 +147,9 @@ async def _apply_rule(
                 await member.remove_roles(remove_role, reason=f"Role upgrade: {rule_id}")
             except discord.Forbidden:
                 pass
+        superseded_rule_id = _rule_id_for_role(remove_name)
+        if superseded_rule_id:
+            await STORE.set_role_grant(member.id, superseded_rule_id)
 
     # Persist grant
     await STORE.set_role_grant(member.id, rule_id)
@@ -182,6 +201,12 @@ async def evaluate_member(member: discord.Member, guild: discord.Guild) -> None:
     Evaluate all enabled rules against one member.
     Called after each message and during the periodic sweep.
 
+    Rules are evaluated in DESCENDING order of strictness (highest tier first).
+    The first rule that fires wins, and lower-tier rules are skipped — this
+    prevents granting Veil-Keepers AND Eldritch Ones in the same pass when a
+    user qualifies for both, and prevents lower-tier DMs from firing on
+    high-activity users on first observation or after a restart.
+
     Trigger fields used:
       type          — "message_count" (only supported type)
       count         — messages needed in the window
@@ -195,7 +220,20 @@ async def evaluate_member(member: discord.Member, guild: discord.Guild) -> None:
     import time as _time
     now = _time.time()
 
-    for rule in RULE_ENGINE.rules():
+    # Order rules from most demanding to least demanding.
+    # Sort key: (min_days_member desc, count desc, window_days asc).
+    # Higher member-tenure requirement = higher tier; if tied, more messages = higher tier.
+    def _strictness(rule: dict[str, Any]) -> tuple[int, int, int]:
+        t = rule.get("trigger", {})
+        return (
+            int(t.get("min_days_member") or 0),
+            int(t.get("count") or 0),
+            -int(t.get("window_days") or 0),
+        )
+
+    ordered_rules = sorted(RULE_ENGINE.rules(), key=_strictness, reverse=True)
+
+    for rule in ordered_rules:
         trigger = rule.get("trigger", {})
         rule_id = rule["id"]
 
@@ -252,7 +290,12 @@ async def evaluate_member(member: discord.Member, guild: discord.Guild) -> None:
         count = await STORE.count_activity(member.id, window_seconds, channel_id)
 
         if count >= count_needed:
-            await _apply_rule(rule, member, guild)
+            granted = await _apply_rule(rule, member, guild)
+            if granted:
+                # Highest-tier eligible rule has fired. Stop — lower tiers
+                # are explicitly removed via this rule's remove_roles, and
+                # we don't want their DMs going out too.
+                return
         else:
             log.debug(
                 "Rule '%s': %s has %d/%d messages in %dd window",
