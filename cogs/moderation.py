@@ -176,8 +176,21 @@ class ModerationCog(commands.Cog):
                 return
             else:
                 # decision == "llm"
+                # NSFW channels: skip the moderation LLM entirely.
+                # Small models (3B-class) can't reliably distinguish "explicit RP
+                # welcome here" from "actual abuse", so they over-warn or
+                # mis-classify. Prefilter (blocklist + spam + caps + mention spam)
+                # already ran above and provides rule-based protection.
+                # Adult content moderation in these channels is owner/admin job.
+                if message.channel.name in CFG.nsfw_channels:
+                    log.debug(
+                        "NSFW channel #%s — skipping LLM moderation (prefilter only)",
+                        message.channel.name,
+                    )
+                    # Fall through to chat path
+                    pass
                 # Check if Ollama is reachable before attempting moderation
-                if not await OLLAMA.health():
+                elif not await OLLAMA.health():
                     # Ollama is down — skip LLM moderation, fall through to chat/ignore
                     log.warning("Ollama unreachable, skipping LLM moderation")
                     pass
@@ -248,7 +261,12 @@ class ModerationCog(commands.Cog):
         # (warn / delete / timeout / role / ignore) remain available so we
         # can still moderate non-allowed users normally.
         author_allowed = is_chat_allowed(message.author)
-        if author_allowed:
+        is_nsfw_channel = message.channel.name in CFG.nsfw_channels
+        if is_nsfw_channel:
+            # NSFW channels: LLM may only chat or stay silent. Never moderate.
+            # Rule-based prefilter (blocklist/spam/caps/mentions) still applies.
+            allowed = {"reply", "ignore"} if author_allowed else {"ignore"}
+        elif author_allowed:
             allowed = CFG.allowed_actions | {"ignore", "reply"}
         else:
             allowed = (CFG.allowed_actions | {"ignore"}) - {"reply"}
