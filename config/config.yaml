@@ -19,7 +19,7 @@ respond_to_persona_name: false
 database:
   path: "data/bot.db"          # SQLite file (WAL mode)
   chat_keep_last_turns: 50     # per-user memory size for chat
-  chat_context_turns: 16        # how many past turns to feed the LLM when chatting
+  chat_context_turns: 5        # how many past turns to feed the LLM when chatting
 
 # Roles the bot must never touch (kick/ban/timeout/role-change).
 protected_roles:
@@ -59,11 +59,11 @@ dynamic_mood: false
 ollama:
   model: "hermes3:3b"       # The model identifier. Hermes 3 3B is optimized for steerability and RP.
   temperature: 0.85         # Controls randomness. 0.85 is great for expressive Roleplay without losing logic.
-  num_ctx: 6144             # The context window (tokens). 4096 is the "sweet spot" for 7GB available RAM. Higher values significantly increase RAM consumption and slow down CPU processing.
+  num_ctx: 4096             # The context window (tokens). 4096 is the "sweet spot" for 7GB available RAM. Higher values significantly increase RAM consumption and slow down CPU processing.
   num_thread: 6             # Number of CPU threads. Set to 6 to match your physical cores for max efficiency. Avoid exceeding physical core count to prevent system-wide latency.
   f16_kv: false             # When false, uses lower precision for the KV cache. Crucial for CPU/Low-RAM setups to save roughly 10-20% Memory.
-  num_predict: 320          # Max tokens to generate per response. 320 is plenty for mod-logs and short RP.
-  timeout_seconds: 60       # Timeout for the API request. 60s is safe for 3B models on modern CPUs.
+  num_predict: 120          # Max tokens to generate per response. 320 is plenty for mod-logs and short RP.
+  timeout_seconds: 90       # Timeout for the API request. 60s is safe for 3B models on modern CPUs.
   think: false              # Disables internal "thinking" blocks if the model supports them (e.g., Gemma 3). Set to false to reduce latency and keep the output clean for the parser.
   use_json_format: true     # Forces the model to output valid JSON. Hermes 3 supports this well, ensuring your Python parser doesn't fail.
 

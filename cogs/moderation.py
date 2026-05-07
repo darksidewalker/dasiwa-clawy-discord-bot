@@ -67,7 +67,7 @@ class ModerationCog(commands.Cog):
 
         # Rolling channel context (short-term, in-memory)
         self._channel_ctx[message.channel.id].append(
-            f"{message.author.display_name}: {message.content[:200]}"
+            f"{message.author.display_name}: {message.content[:120]}"
         )
 
         if CFG.state.paused:
@@ -377,7 +377,7 @@ class ModerationCog(commands.Cog):
         past = await STORE.recent_chat_turns(
             message.author.id, limit=CFG.chat_context_turns
         )
-        history_lines = [f"{t['role']}: {t['content'][:400]}" for t in past]
+        history_lines = [f"{t['role']}: {t['content'][:200]}" for t in past]
         history_str = "\n".join(history_lines) if history_lines else "(no prior conversation)"
 
         # Get user context from the database (join date, activity level, notes)
@@ -386,7 +386,7 @@ class ModerationCog(commands.Cog):
 
         # Live channel context — what the room is talking about right now.
         # Excludes the triggering message itself (already in "New message" below).
-        channel_lines = list(self._channel_ctx[message.channel.id])[:-1]
+        channel_lines = list(self._channel_ctx[message.channel.id])[-3:-1]
         channel_ctx_str = (
             "\n".join(channel_lines) if channel_lines else "(no recent channel activity)"
         )
