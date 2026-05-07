@@ -88,6 +88,7 @@ class OllamaClient:
         content = (data.get("message") or {}).get("content", "").strip()
         if not content:
             return None
+        log.info("Ollama raw response: %r", content[:500])
 
         # Strip thinking tokens that gemma4 may emit even with think omitted
         # Format: <|channel>thought\n...<channel|>  or  <think>...</think>
