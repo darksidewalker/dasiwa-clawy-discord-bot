@@ -164,6 +164,16 @@ class Config:
         return int(self.raw.get("ollama", {}).get("timeout_seconds", 30))
 
     @property
+    def num_thread(self) -> int:
+        """Threads Ollama uses for inference. Default 4 if not set."""
+        return int(self.raw.get("ollama", {}).get("num_thread", 4))
+
+    @property
+    def f16_kv(self) -> bool:
+        """Whether to use fp16 for the KV cache. Default False (saves RAM on CPU)."""
+        return bool(self.raw.get("ollama", {}).get("f16_kv", False))
+
+    @property
     def think(self) -> bool:
         """
         Whether Ollama should run the model's reasoning trace before answering.

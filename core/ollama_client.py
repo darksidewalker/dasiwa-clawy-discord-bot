@@ -53,8 +53,8 @@ class OllamaClient:
                 "temperature": CFG.temperature,
                 "num_ctx": CFG.num_ctx,
                 "num_predict": CFG.num_predict,
-                "num_thread": getattr(CFG, "num_thread", 4),
-                "f16_kv": getattr(CFG, "f16_kv", False),
+                "num_thread": CFG.num_thread,
+                "f16_kv": CFG.f16_kv,
             },
             "messages": [
                 {"role": "system", "content": system},
