@@ -130,12 +130,37 @@ async def execute(
 
         # ── delete ───────────────────────────────────────────────────
         if act == "delete":
+            channel_name = getattr(message.channel, "name", "the channel")
             try:
                 await message.delete()
             except discord.Forbidden:
                 return "delete: missing permission"
             except discord.NotFound:
                 pass
+
+            # User-facing notifications (DM + short channel notice), gated by
+            # config.notify_user.* — see config.yaml.
+            if CFG.notify_user_enabled:
+                if CFG.notify_user_dm:
+                    try:
+                        await author.send(
+                            f"Your message in #{channel_name} was removed by moderation."
+                            + (f"\nReason: {reason}" if reason else "")
+                        )
+                    except discord.DiscordException:
+                        # User has DMs disabled or blocked — silent skip.
+                        pass
+
+                if CFG.notify_user_channel_notice:
+                    try:
+                        await message.channel.send(
+                            f"{author.mention} Your message was removed by moderation.",
+                            allowed_mentions=discord.AllowedMentions(users=True),
+                            delete_after=CFG.notify_user_notice_seconds,
+                        )
+                    except discord.DiscordException:
+                        pass
+
             strikes = await STORE.count_strikes(author.id,
                                                 CFG.mod.get("strike_window_hours", 24))
             await STORE.log_mod_event(

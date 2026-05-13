@@ -92,6 +92,17 @@ move:
   max_batch: 25                # max messages moved in one command (safety cap)
   post_notice: true            # post "moved from #x by @admin" in destination
 
+# ---- User notifications on delete / move / purge ----
+# When Clawy deletes (autonomous), an admin moves (!moveto/!movelast), or an
+# admin purges (!purge/!purgeuser) one of a user's messages, Clawy can
+# notify the user via DM and via a short auto-deleting message in the channel.
+# Admin log entries are independent of these flags and always post.
+notify_user:
+  enabled: true                # master switch — false silences DM and notice everywhere
+  dm: true                     # DM the affected user (best-effort; silent if DMs disabled)
+  channel_notice: true         # post the short auto-deleting message in the channel
+  notice_seconds: 20           # how long the channel notice stays visible (3..300)
+
 # ---- Actions the LLM is allowed to pick autonomously ----
 # Kick and ban are intentionally absent — the LLM can never execute them.
 # If the LLM tries to pick kick/ban, it is flagged for human review instead.

@@ -260,6 +260,32 @@ class Config:
     def move_post_notice(self) -> bool:
         return bool(self.raw.get("move", {}).get("post_notice", True))
 
+    # ---- notify_user (DM + channel notice on delete/move/purge) ----
+    @property
+    def notify_user_enabled(self) -> bool:
+        """Master switch for user notifications on delete/move/purge.
+        When False, both DM and channel notice are suppressed everywhere."""
+        return bool(self.raw.get("notify_user", {}).get("enabled", True))
+
+    @property
+    def notify_user_dm(self) -> bool:
+        """Whether to DM the affected user. Best-effort — silent if DMs disabled.
+        Has no effect when notify_user.enabled is False."""
+        return bool(self.raw.get("notify_user", {}).get("dm", True))
+
+    @property
+    def notify_user_channel_notice(self) -> bool:
+        """Whether to post the auto-deleting channel notice.
+        Has no effect when notify_user.enabled is False."""
+        return bool(self.raw.get("notify_user", {}).get("channel_notice", True))
+
+    @property
+    def notify_user_notice_seconds(self) -> int:
+        """How long the channel notice stays visible before auto-deleting.
+        Clamped to [3, 300]."""
+        v = int(self.raw.get("notify_user", {}).get("notice_seconds", 20))
+        return max(3, min(v, 300))
+
 
 # Module-level singleton
 CFG = Config.load()

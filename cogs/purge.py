@@ -285,6 +285,49 @@ class PurgeCog(CleanCommandCog):
         if len(author_counts) > 5:
             author_summary += f", +{len(author_counts) - 5} more"
 
+        # ── User-facing notifications (DM + short channel notice) ──
+        # Gated by config.notify_user.* — see config.yaml. The admin log
+        # (further down) is independent and always posts.
+        # Build a map of user_id -> (User object, count) using the same
+        # to_delete[:deleted] approximation as author_counts above.
+        per_user: dict[int, tuple[discord.abc.User, int]] = {}
+        for m in to_delete[:deleted]:
+            uid = m.author.id
+            if uid in per_user:
+                per_user[uid] = (per_user[uid][0], per_user[uid][1] + 1)
+            else:
+                per_user[uid] = (m.author, 1)
+
+        if CFG.notify_user_enabled and per_user:
+            # DM each affected user once, summarizing their batch.
+            if CFG.notify_user_dm:
+                ch_name = target_channel.name
+                for uid, (user, count) in per_user.items():
+                    noun = "message" if count == 1 else "messages"
+                    was_were = "was" if count == 1 else "were"
+                    try:
+                        await user.send(
+                            f"Your {count} {noun} in #{ch_name} {was_were} removed by moderation."
+                        )
+                    except discord.DiscordException:
+                        # User has DMs disabled, is a webhook author, or is no
+                        # longer in the guild — silent skip, this is best-effort.
+                        pass
+
+            # Public auto-deleting notice in the target channel. Lists who was
+            # affected so users in the room see what happened.
+            if CFG.notify_user_channel_notice:
+                total_noun = "message" if deleted == 1 else "messages"
+                mentions = ", ".join(user.mention for user, _ in per_user.values())
+                try:
+                    await target_channel.send(
+                        f"{mentions} {deleted} {total_noun} removed by moderation.",
+                        allowed_mentions=discord.AllowedMentions(users=True),
+                        delete_after=CFG.notify_user_notice_seconds,
+                    )
+                except discord.DiscordException:
+                    pass
+
         # ── Admin-facing confirmation. Goes to the log channel if one is
         #    configured (so a backstage purge stays backstage), otherwise
         #    inline. reply_permanent handles that routing for us.

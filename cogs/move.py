@@ -277,19 +277,32 @@ class MoveCog(CleanCommandCog):
         if moved == 0:
             return  # nothing happened, stay silent
 
-        # ── Notify the affected user in the SOURCE channel (auto-deletes after 8s) ──
+        # ── User-facing notifications (DM + short channel notice) ──
+        # Gated by config.notify_user.* — see config.yaml. The admin log
+        # (further down) is independent and always posts.
         noun = "message" if moved == 1 else "messages"
-        try:
-            notice = await ctx.channel.send(
-                f"{author.mention} Your {noun} {'was' if moved == 1 else 'were'} "
-                f"moved to {dest.mention}.",
-                allowed_mentions=discord.AllowedMentions(users=True),
-            )
-            # Auto-delete after 8 seconds so it doesn't clutter the channel
-            await asyncio.sleep(8)
-            await notice.delete()
-        except discord.DiscordException:
-            pass
+        was_were = "was" if moved == 1 else "were"
+        if CFG.notify_user_enabled:
+            src_name = getattr(ctx.channel, "name", "the channel")
+            dst_name = getattr(dest, "name", "another channel")
+            if CFG.notify_user_dm:
+                try:
+                    await author.send(
+                        f"Your {noun} in #{src_name} {was_were} moved to #{dst_name}.\n"
+                        f"You can continue the conversation there."
+                    )
+                except discord.DiscordException:
+                    pass
+
+            if CFG.notify_user_channel_notice:
+                try:
+                    await ctx.channel.send(
+                        f"{author.mention} Your {noun} {was_were} moved to {dest.mention}.",
+                        allowed_mentions=discord.AllowedMentions(users=True),
+                        delete_after=CFG.notify_user_notice_seconds,
+                    )
+                except discord.DiscordException:
+                    pass
 
         # ── Log to admin log channel (private, full detail) ──
         await _post_to_log(

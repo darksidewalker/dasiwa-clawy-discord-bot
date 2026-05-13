@@ -27,6 +27,7 @@ costs, no data leaving your server.
 9. [Moderation system](#9-moderation-system)
 10. [Activity-based roles](#10-activity-based-roles)
 11. [Message moving](#11-message-moving)
+    - [User notifications on delete / move / purge](#user-notifications-on-delete--move--purge)
 12. [Rate limiting and anti-spam](#12-rate-limiting-and-anti-spam)
 13. [Sleep mode and quiet hours](#13-sleep-mode-and-quiet-hours)
 14. [Memory and database](#14-memory-and-database)
@@ -321,7 +322,7 @@ Executor (guardrails)
 | `ignore`       | Nothing. Message passes through. |
 | `reply`        | Clawy responds in character. |
 | `warn`         | Warning posted in channel. Strike added. |
-| `delete`       | Message deleted. Strike added. |
+| `delete`       | Message deleted. Strike added. User is DM'd and a short notice is posted in the channel (configurable — see [User notifications](#user-notifications-on-delete--move--purge)). |
 | `timeout`      | User muted. Clamped to `max_autonomous_timeout_seconds` (default 10 min). |
 | `assign_role`  | Adds a named role. |
 | `remove_role`  | Removes a named role. |
@@ -523,7 +524,8 @@ name and avatar are preserved. Attachments and images are re-uploaded.
 
 What regular users see:
 - **Destination channel:** message appears naturally, no header or notice.
-- **Source channel:** brief `@username Your message was moved to #channel.` notice that auto-deletes after a few seconds.
+- **Source channel:** brief `@username Your message was moved to #channel.` notice that auto-deletes after `notify_user.notice_seconds` (default 20s).
+- **DM:** the affected user receives a DM telling them where their message was moved (silent if they have DMs disabled). Both the notice and the DM can be disabled — see [User notifications](#user-notifications-on-delete--move--purge).
 
 What admins see in the log channel:
 - Full detail: who moved it, from where, to where, how many, by which admin.
@@ -554,6 +556,59 @@ Move the last N messages from a user in the current channel:
 - Clawy needs **Manage Messages** in the source channel.
 - The admin running the command needs Administrator or Manage Messages permission.
 - Batch size is capped at `move.max_batch` in config (default 25).
+
+---
+
+## User notifications on delete / move / purge
+
+When Clawy autonomously deletes a message, an admin moves messages with
+`!moveto` / `!movelast`, or an admin purges messages with `!purge` /
+`!purgeuser`, the affected user can be notified in two ways:
+
+- **DM** — direct message in the user's voice (silent if the user has DMs
+  disabled or has blocked the bot).
+- **Channel notice** — a short, plain message in the channel mentioning the
+  affected user(s); auto-deletes after `notice_seconds`.
+
+Admin log entries are independent of these flags and always post.
+
+### Configuration
+
+In `config/config.yaml`:
+
+```yaml
+notify_user:
+  enabled: true          # master switch — false silences DM and notice everywhere
+  dm: true               # DM the affected user (best-effort)
+  channel_notice: true   # post the short auto-deleting message in the channel
+  notice_seconds: 20     # how long the channel notice stays (clamped 3..300)
+```
+
+All four keys are optional; the defaults above apply when missing.
+
+### Behavior matrix
+
+| Action                              | DM the user | Channel notice |
+|-------------------------------------|---|---|
+| LLM `delete` (autonomous)           | ✓ — names channel and reason | ✓ — in the same channel |
+| `!moveto` / `!movelast`             | ✓ — names source and destination | ✓ — in the source channel |
+| `!purge` / `!purgeuser`             | ✓ — one DM per affected user, batch count | ✓ — in the target channel, mentions all affected users |
+
+For purges that touch multiple users, each user gets exactly one DM summarizing
+how many of *their* messages were removed. The channel notice mentions everyone
+affected in a single message.
+
+### When DMs fail silently
+
+Best-effort means: if the DM can't be delivered, Clawy logs nothing visible to
+the user and continues. This is the right default — most failures are users
+who simply have DMs from server members disabled. The action still goes
+through, the channel notice still posts (if enabled), and the admin log entry
+is unaffected.
+
+Webhook-authored messages (e.g. moved messages re-posted by the bot itself) and
+messages from users who have since left the server are also skipped silently
+during purges.
 
 ---
 
@@ -901,6 +956,16 @@ max_autonomous_timeout_seconds: 600
 move:
   max_batch: 25                # safety cap on a single !moveto / !movelast
   post_notice: true            # post brief "moved" notice in source channel
+
+# ── User notifications on delete / move / purge ──────────────────────
+# When a user's message is deleted (by the LLM), moved, or purged,
+# Clawy can DM the user and/or post a short auto-deleting notice
+# in the channel. Admin logs are independent and always post.
+notify_user:
+  enabled: true                # master switch — false silences both
+  dm: true                     # DM the affected user (best-effort)
+  channel_notice: true         # post short auto-deleting message in the channel
+  notice_seconds: 20           # how long the channel notice stays (3..300)
 
 # ── Allowed LLM actions ──────────────────────────────────────────────
 # Kick and ban are intentionally absent — the LLM can never execute them.
