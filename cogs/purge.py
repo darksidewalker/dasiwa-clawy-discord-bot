@@ -22,6 +22,11 @@ Commands
       cleans #general; running `!purgeuser @bob 5` in #general cleans
       the current channel).
 
+  !purgethis
+      Reply to a specific message, then run this command. Deletes only that
+      one message. Always notifies the author (DM + channel notice) regardless
+      of the global notify_user.* config, so the user knows what happened.
+
 Safety
 ------
   * Admin-only (owner_id or Administrator). Non-admins get the command
@@ -156,6 +161,45 @@ class PurgeCog(CleanCommandCog):
         )
 
     # =====================================================
+    # !purgethis (reply-based, single message)
+    # =====================================================
+    @commands.command(name="purgethis")
+    async def purgethis(self, ctx: commands.Context) -> None:
+        """Delete a single specific message.
+
+        Reply to the offending message, then type `!purgethis`.
+        The replied-to message is deleted. The author is always DM'd and
+        a short channel notice always posts (bypasses `notify_user.*`),
+        so the user sees what happened even if global notifications are off.
+
+        Protected users (owner, server owner, configured protected_roles)
+        are silently skipped, same as the bulk purge commands.
+        """
+        if not isinstance(ctx.channel, discord.TextChannel):
+            await ack(ctx, "This command only works in text channels.")
+            return
+        if ctx.message.reference is None or ctx.message.reference.message_id is None:
+            await ack(ctx, "Reply to the message you want to delete, then run `!purgethis`.")
+            return
+        try:
+            target_msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+        except discord.NotFound:
+            await ack(ctx, "Could not find the referenced message (already deleted?).")
+            return
+        except discord.Forbidden:
+            await ack(ctx, "Cannot read that message.")
+            return
+
+        await self._do_purge(
+            ctx,
+            target_channel=ctx.channel,
+            n=1,
+            only_author=None,
+            explicit_targets=[target_msg],
+            force_notify=True,
+        )
+
+    # =====================================================
     # core purge logic
     # =====================================================
     async def _do_purge(
@@ -165,6 +209,8 @@ class PurgeCog(CleanCommandCog):
         target_channel: discord.TextChannel,
         n: int,
         only_author: discord.Member | None,
+        explicit_targets: list[discord.Message] | None = None,
+        force_notify: bool = False,
     ) -> None:
         if ctx.guild is None:
             await ack(ctx, "This command only works in a server.")
@@ -188,43 +234,58 @@ class PurgeCog(CleanCommandCog):
             await ack(ctx, f"I need **Manage Messages** in {target_channel.mention}.")
             return
 
-        # Walk history newest-first, collect up to N matching messages.
-        # If only_author is set, we may need to read past more than N raw
-        # messages — bound by a generous upper limit so we don't loop forever.
-        scan_limit = max(n * 20, 200) if only_author else n
-        scan_limit = min(scan_limit, 1000)
-
         to_delete: list[discord.Message] = []
         skipped_protected: list[str] = []
-        try:
-            async for m in target_channel.history(limit=scan_limit):
-                # Don't try to delete the !purge command itself if we're
-                # purging the same channel where it was typed.
-                if m.id == ctx.message.id:
-                    continue
-                if only_author is not None and m.author.id != only_author.id:
-                    continue
-                # Refuse to delete protected users' messages, even on demand.
-                # Same rule the LLM operates under — admins can still kick/ban
-                # protected users themselves via Discord, but the BOT won't
-                # delete their messages on someone else's instruction.
+
+        if explicit_targets is not None:
+            # Caller already resolved which messages to delete (e.g. via reply).
+            # Apply the same protection rule we use for history-scanned purges.
+            for m in explicit_targets:
                 if _is_protected(m.author, ctx.guild):
                     if m.author.display_name not in skipped_protected:
                         skipped_protected.append(m.author.display_name)
                     continue
                 to_delete.append(m)
-                if len(to_delete) >= n:
-                    break
-        except discord.Forbidden:
-            await ack(ctx, f"Cannot read history of {target_channel.mention}.")
-            return
-        except discord.HTTPException as e:
-            await ack(ctx, f"History read failed: `{e}`")
-            return
+        else:
+            # Walk history newest-first, collect up to N matching messages.
+            # If only_author is set, we may need to read past more than N raw
+            # messages — bound by a generous upper limit so we don't loop forever.
+            scan_limit = max(n * 20, 200) if only_author else n
+            scan_limit = min(scan_limit, 1000)
+
+            try:
+                async for m in target_channel.history(limit=scan_limit):
+                    # Don't try to delete the !purge command itself if we're
+                    # purging the same channel where it was typed.
+                    if m.id == ctx.message.id:
+                        continue
+                    if only_author is not None and m.author.id != only_author.id:
+                        continue
+                    # Refuse to delete protected users' messages, even on demand.
+                    # Same rule the LLM operates under — admins can still kick/ban
+                    # protected users themselves via Discord, but the BOT won't
+                    # delete their messages on someone else's instruction.
+                    if _is_protected(m.author, ctx.guild):
+                        if m.author.display_name not in skipped_protected:
+                            skipped_protected.append(m.author.display_name)
+                        continue
+                    to_delete.append(m)
+                    if len(to_delete) >= n:
+                        break
+            except discord.Forbidden:
+                await ack(ctx, f"Cannot read history of {target_channel.mention}.")
+                return
+            except discord.HTTPException as e:
+                await ack(ctx, f"History read failed: `{e}`")
+                return
 
         if not to_delete:
-            who = f" from **{only_author.display_name}**" if only_author else ""
-            await ack(ctx, f"No matching messages{who} found in {target_channel.mention}.")
+            if explicit_targets is not None:
+                # Explicit target was provided but was filtered out (e.g. protected user)
+                await ack(ctx, "Cannot purge that message (target may be protected).")
+            else:
+                who = f" from **{only_author.display_name}**" if only_author else ""
+                await ack(ctx, f"No matching messages{who} found in {target_channel.mention}.")
             return
 
         # Split into bulk-deletable (< 14 days) and individual-delete buckets.
@@ -288,6 +349,8 @@ class PurgeCog(CleanCommandCog):
         # ── User-facing notifications (DM + short channel notice) ──
         # Gated by config.notify_user.* — see config.yaml. The admin log
         # (further down) is independent and always posts.
+        # When force_notify is set (e.g. !purgethis), the global notify_user
+        # flags are bypassed and both DM and channel notice always fire.
         # Build a map of user_id -> (User object, count) using the same
         # to_delete[:deleted] approximation as author_counts above.
         per_user: dict[int, tuple[discord.abc.User, int]] = {}
@@ -298,9 +361,13 @@ class PurgeCog(CleanCommandCog):
             else:
                 per_user[uid] = (m.author, 1)
 
-        if CFG.notify_user_enabled and per_user:
+        notify_enabled = force_notify or CFG.notify_user_enabled
+        send_dm = force_notify or CFG.notify_user_dm
+        send_channel_notice = force_notify or CFG.notify_user_channel_notice
+
+        if notify_enabled and per_user:
             # DM each affected user once, summarizing their batch.
-            if CFG.notify_user_dm:
+            if send_dm:
                 ch_name = target_channel.name
                 for uid, (user, count) in per_user.items():
                     noun = "message" if count == 1 else "messages"
@@ -316,7 +383,7 @@ class PurgeCog(CleanCommandCog):
 
             # Public auto-deleting notice in the target channel. Lists who was
             # affected so users in the room see what happened.
-            if CFG.notify_user_channel_notice:
+            if send_channel_notice:
                 total_noun = "message" if deleted == 1 else "messages"
                 mentions = ", ".join(user.mention for user, _ in per_user.values())
                 try:
@@ -337,6 +404,11 @@ class PurgeCog(CleanCommandCog):
         ]
         if only_author is not None:
             lines.append(f"👤 Target: {only_author.mention} (`{only_author.id}`)")
+        elif explicit_targets is not None and len(author_counts) == 1:
+            # Single-message reply-based purge — show the target plainly,
+            # not as a "×1" multi-author summary.
+            (uid, _name), _count = next(iter(author_counts.items()))
+            lines.append(f"👤 Target: <@{uid}> (`{uid}`)")
         elif author_summary:
             lines.append(f"👥 Authors: {author_summary}")
         lines.append(f"🛡️ By: {ctx.author.mention}")

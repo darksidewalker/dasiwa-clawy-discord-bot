@@ -563,7 +563,7 @@ Move the last N messages from a user in the current channel:
 
 When Clawy autonomously deletes a message, an admin moves messages with
 `!moveto` / `!movelast`, or an admin purges messages with `!purge` /
-`!purgeuser`, the affected user can be notified in two ways:
+`!purgeuser` / `!purgethis`, the affected user can be notified in two ways:
 
 - **DM** — direct message in the user's voice (silent if the user has DMs
   disabled or has blocked the bot).
@@ -588,15 +588,20 @@ All four keys are optional; the defaults above apply when missing.
 
 ### Behavior matrix
 
-| Action                              | DM the user | Channel notice |
-|-------------------------------------|---|---|
-| LLM `delete` (autonomous)           | ✓ — names channel and reason | ✓ — in the same channel |
-| `!moveto` / `!movelast`             | ✓ — names source and destination | ✓ — in the source channel |
-| `!purge` / `!purgeuser`             | ✓ — one DM per affected user, batch count | ✓ — in the target channel, mentions all affected users |
+| Action                              | DM the user | Channel notice | Respects `notify_user.*`? |
+|-------------------------------------|---|---|---|
+| LLM `delete` (autonomous)           | ✓ — names channel and reason | ✓ — in the same channel | Yes |
+| `!moveto` / `!movelast`             | ✓ — names source and destination | ✓ — in the source channel | Yes |
+| `!purge` / `!purgeuser`             | ✓ — one DM per affected user, batch count | ✓ — in the target channel, mentions all affected users | Yes |
+| `!purgethis` (reply-based)          | ✓ — always | ✓ — always | **No** — flags bypassed |
 
 For purges that touch multiple users, each user gets exactly one DM summarizing
 how many of *their* messages were removed. The channel notice mentions everyone
 affected in a single message.
+
+`!purgethis` is the exception: it intentionally bypasses the notification flags
+so that an admin removing a specific message via reply can always be sure the
+author finds out. Use the bulk commands if you want quieter sweeps.
 
 ### When DMs fail silently
 
@@ -855,6 +860,18 @@ Duration formats accepted: `30s`, `30m`, `2h`, `1h30m`, `1h30m20s`.
 | `!moveto #channel`                   | Move replied message to channel. |
 | `!moveto #channel N`                 | Move replied message + up to N more from same author. |
 | `!movelast @user N #channel`         | Move last N messages from user in this channel. |
+
+### Message deletion (purge)
+
+| Command                              | Effect |
+|--------------------------------------|---|
+| `!purgethis`                         | Reply to a message, then run this. Deletes that one message. **Always** DMs the author and posts a channel notice, regardless of `notify_user.*`. |
+| `!purge #channel N`                  | Delete last N messages in #channel (any author). |
+| `!purge #channel N @user`            | Delete last N messages in #channel from @user only. |
+| `!purgeuser @user N`                 | Delete last N messages from @user in this channel. |
+| `!purgeuser @user N #channel`        | Delete last N messages from @user in #channel. |
+
+Batch size is capped at `move.max_batch` (default 25). Protected users are silently skipped. `!purge` / `!purgeuser` respect `notify_user.*` config; `!purgethis` ignores those flags and always notifies.
 
 ### Activity-based roles
 
