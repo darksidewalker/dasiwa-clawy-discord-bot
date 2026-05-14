@@ -184,10 +184,23 @@ def build_expressions_prompt_block(
     if allow_reactions and sampled_emoji:
         lines = [f"  :{name}: — {desc}" for name, desc in sampled_emoji.items()]
         sections.append(
-            "REACTIONS — you may include a \"react\" field (list of strings, "
-            f"max {max_reactions_per_message}) to react to the user's message with "
-            "emoji. Use sparingly and only when it fits the moment. You can mix "
-            "Unicode emoji (e.g. \"💀\", \"🔥\") with named custom emoji from this list:\n"
+            "REACTIONS — the \"react\" field puts emoji ON THE USER'S MESSAGE "
+            "as Discord reactions. This is different from emoji in your reply text:\n"
+            "  • Emoji INSIDE your \"message\" field = your own expression while speaking. "
+            "Fine to use, you can keep doing that.\n"
+            "  • Emoji in the \"react\" field = your reaction to what THEY said. "
+            "Appears as a small emoji clip attached to their message, the way a human "
+            "would tap the reaction button.\n"
+            "USE THE react FIELD GENEROUSLY. Whenever the user's message is funny, savage, "
+            "agreeable, dubious, sweet, or otherwise worth a non-verbal acknowledgment, "
+            f"add 1–{max_reactions_per_message} reaction(s). This is the main way you "
+            "physically interact with the conversation — don't skip it.\n"
+            "Format: a JSON array of strings. Each string is either a Unicode emoji "
+            "character (\"💀\", \"🔥\", \"😏\") or a named custom emoji from the list below "
+            "(write the name with NO colons, e.g. \"catjam\" not \":catjam:\").\n"
+            "Example response that uses it:\n"
+            '  {"message": "Bold claim.", "react": ["smirk", "👀"]}\n'
+            "Available named emoji (description tells you when each fits):\n"
             + "\n".join(lines)
         )
 
@@ -213,10 +226,13 @@ def build_expressions_prompt_block(
         return ""
 
     return (
-        "\n\nEXPRESSIVE OUTPUT (all optional)\n"
-        "These fields are NEVER required. Only use them when they genuinely "
-        "add to the moment. Most messages should have none. The \"message\" "
-        "field remains the primary output.\n\n"
+        "\n\nEXPRESSIVE OUTPUT\n"
+        "You have three optional output channels alongside your text message: "
+        "reactions (emoji on the user's message), stickers, and media attachments.\n"
+        "  • REACTIONS are encouraged — use them often, the way a person taps reaction "
+        "emoji on messages they find funny, savage, dubious, or sweet.\n"
+        "  • STICKERS and MEDIA are rare — only when they really land. Most messages "
+        "should not have either.\n\n"
         + "\n\n".join(sections)
     )
 
@@ -224,9 +240,10 @@ def build_expressions_prompt_block(
 def schema_extension_doc() -> str:
     """Short schema doc snippet appended to ACTION_SCHEMA_DOC and chat schema."""
     return (
-        '  "react":   array of strings,  // optional — emoji to react with\n'
+        '  "react":   array of strings,  // emoji to put as reactions on the user\'s message\n'
         '  "sticker": string,            // optional — key from sticker list\n'
         '  "attach":  string,            // optional — key from media list\n'
+        '  // Example: {"message": "Sure thing.", "react": ["smirk", "🔥"]}\n'
     )
 
 
