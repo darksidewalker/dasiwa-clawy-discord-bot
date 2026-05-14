@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import time
+from pathlib import Path
 
 import discord
 from discord.ext import commands
@@ -128,7 +129,7 @@ class AdminCog(CleanCommandCog):
                 ("roles",    "manage activity-based role rules"),
             ]),
             ("Diagnostics", [
-                ("diag",     "health check: Ollama, mode, gating"),
+                ("diag",     "health check across all subsystems (`!diag verbose` for full)"),
                 ("perms",    "show Clawy's permissions in this channel"),
                 ("setlog",   "set the log channel (session)"),
                 ("help",     "this list (use `!help <command>` for details)"),
@@ -378,31 +379,272 @@ class AdminCog(CleanCommandCog):
 
     # ---------- health ----------
     @commands.command(name="diag")
-    async def diag(self, ctx: commands.Context) -> None:
+    async def diag(self, ctx: commands.Context, verbose: str = "") -> None:
+        """Health check across all subsystems.
+
+        Usage:
+          !diag           — concise summary (one screen)
+          !diag verbose   — adds full catalog listings (emoji names, media keys, etc.)
+        """
+        is_verbose = verbose.lower() in {"verbose", "v", "full", "all"}
+        lines: list[str] = []
+
+        # ─── 1. Health ───────────────────────────────────────────────
         t0 = time.time()
         healthy = await OLLAMA.health()
         latency_ms = int((time.time() - t0) * 1000)
-        lines = [
-            f"**Ollama**: {'✅ reachable' if healthy else '❌ unreachable'} at `{CFG.ollama_url}` ({latency_ms}ms)",
-            f"**Model**: `{CFG.model}`  |  **Think**: {'on' if CFG.think else 'off'}",
-            f"**Mode**: `{CFG.mode}`  |  **Paused**: {CFG.state.paused}",
-            f"**Owner ID**: `{CFG.owner_id}`  |  **Your ID**: `{ctx.author.id}`"
-            + (" ✅ match" if ctx.author.id == CFG.owner_id else " ❌ NO MATCH"),
-            f"**Persona**: `{PERSONAS.active_key}` / mood `{PERSONAS.active_mood}`"
-            + f"  |  **Dynamic mood**: {'on' if CFG.dynamic_mood else 'off'}",
-            f"**DB**: `{CFG.db_path}`",
-            f"**Allowed actions**: {', '.join(sorted(CFG.allowed_actions))}",
-            f"**Quiet hours**: "
-            f"{'on' if CFG.quiet_hours_enabled else 'off'}"
-            + (f" ({'ACTIVE' if in_quiet_hours() else 'idle'})" if CFG.quiet_hours_enabled else "")
-            + f" | window {CFG.quiet_hours_start}–{CFG.quiet_hours_end} {CFG.quiet_hours_timezone}",
-            f"**Chat allowlist**: "
-            + (", ".join(CFG.chat_allowed_roles) if CFG.chat_allowed_roles else "everyone"),
-            f"**Proactive chance**: {CFG.proactive_reply_chance:.3f}",
-            f"**NSFW channels**: "
-            + (", ".join(CFG.nsfw_channels) if CFG.nsfw_channels else "(none)"),
-        ]
-        await reply_permanent(ctx, "\n".join(lines))
+        lines.append("__**Health**__")
+        lines.append(
+            f"  Ollama: {'✅' if healthy else '❌'} `{CFG.ollama_url}` "
+            f"({latency_ms}ms)  ·  model `{CFG.model}`  ·  think {'on' if CFG.think else 'off'}"
+        )
+        bot_user = self.bot.user
+        guild_name = ctx.guild.name if ctx.guild else "(no guild)"
+        lines.append(
+            f"  Discord: ✅ `{bot_user}` in **{guild_name}**"
+            if bot_user else "  Discord: ❌ no user (not connected?)"
+        )
+        # Log channel reachability
+        log_ch_status = "not configured"
+        if CFG.log_channel_id and ctx.guild:
+            log_ch = ctx.guild.get_channel(CFG.log_channel_id)
+            if log_ch is None:
+                log_ch_status = f"❌ id `{CFG.log_channel_id}` not found in this guild"
+            elif not isinstance(log_ch, discord.TextChannel):
+                log_ch_status = f"❌ id `{CFG.log_channel_id}` is not a text channel"
+            else:
+                me = ctx.guild.me
+                can_send = me is not None and log_ch.permissions_for(me).send_messages
+                log_ch_status = (
+                    f"{'✅' if can_send else '❌'} {log_ch.mention}"
+                    + ("" if can_send else " (no send permission)")
+                )
+        lines.append(f"  Log channel: {log_ch_status}")
+        # Database
+        try:
+            db_path = Path(CFG.db_path)
+            if db_path.exists():
+                size_mb = db_path.stat().st_size / (1024 * 1024)
+                lines.append(f"  Database: ✅ `{CFG.db_path}` ({size_mb:.1f} MB)")
+            else:
+                lines.append(f"  Database: ⚠️ `{CFG.db_path}` (will be created on first write)")
+        except Exception as e:
+            lines.append(f"  Database: ❌ `{CFG.db_path}` ({e})")
+
+        # ─── 2. Identity & state ─────────────────────────────────────
+        lines.append("")
+        lines.append("__**Identity & state**__")
+        you_ok = "✅ match" if ctx.author.id == CFG.owner_id else "❌ NOT owner"
+        lines.append(f"  Owner: `{CFG.owner_id}`  ·  you `{ctx.author.id}` ({you_ok})")
+        lines.append(
+            f"  Persona: `{PERSONAS.active_key}` / mood `{PERSONAS.active_mood}`  "
+            f"·  dynamic mood {'on' if CFG.dynamic_mood else 'off'}"
+        )
+        sleeping = getattr(CFG.state, "sleeping", False)
+        lines.append(
+            f"  Mode: `{CFG.mode}`  ·  paused {'YES' if CFG.state.paused else 'no'}  "
+            f"·  sleeping {'YES' if sleeping else 'no'}"
+        )
+
+        # ─── 3. Moderation ───────────────────────────────────────────
+        lines.append("")
+        lines.append("__**Moderation**__")
+        lines.append(f"  Allowed actions: {', '.join(sorted(CFG.allowed_actions)) or '(none)'}")
+        strike_window = CFG.mod.get("strike_window_hours", 24)
+        lines.append(
+            f"  Strike window: {strike_window}h  ·  autonomous timeout cap: "
+            f"{CFG.max_autonomous_timeout_seconds}s"
+        )
+        # Blocklist
+        if _blocklist_enabled():
+            try:
+                n_words = len(BLOCKLIST._words)
+                n_phrases = len(BLOCKLIST._phrases)
+                lines.append(
+                    f"  Blocklist: ✅ enabled  ·  {n_words} word(s), {n_phrases} phrase(s)"
+                )
+            except Exception as e:
+                lines.append(f"  Blocklist: ⚠️ enabled but read failed: `{e}`")
+        else:
+            lines.append("  Blocklist: disabled")
+        # Spam prefilter
+        spam_n = CFG.mod.get("spam_threshold", 6)
+        spam_w = CFG.mod.get("spam_window_seconds", 10)
+        spam_strikes = CFG.mod.get("spam_strike_threshold", 3)
+        lines.append(
+            f"  Spam prefilter: {spam_n} msgs / {spam_w}s  ·  "
+            f"strike threshold {spam_strikes}"
+        )
+        # Role engine
+        try:
+            from cogs.roles import RULE_ENGINE
+            n_rules = len(RULE_ENGINE.rules())
+            lines.append(f"  Role rules: {n_rules} loaded")
+        except Exception as e:
+            lines.append(f"  Role rules: ⚠️ engine read failed: `{e}`")
+        # Protected roles
+        prot = ", ".join(CFG.protected_roles) if CFG.protected_roles else "(none)"
+        lines.append(f"  Protected roles: {prot}")
+        # NSFW channels
+        nsfw = ", ".join(CFG.nsfw_channels) if CFG.nsfw_channels else "(none)"
+        lines.append(f"  NSFW channels: {nsfw}")
+        # Notify user
+        if CFG.notify_user_enabled:
+            parts = []
+            if CFG.notify_user_dm:
+                parts.append("DM")
+            if CFG.notify_user_channel_notice:
+                parts.append(f"{CFG.notify_user_notice_seconds}s channel notice")
+            detail = " + ".join(parts) if parts else "(nothing — both subflags off)"
+            lines.append(f"  Notify on delete/move/purge: ✅ {detail}")
+        else:
+            lines.append("  Notify on delete/move/purge: ❌ disabled")
+
+        # ─── 4. Expressions ──────────────────────────────────────────
+        lines.append("")
+        lines.append("__**Expressions**__")
+        if CFG.expressions_enabled:
+            emoji_names = EXPRESSIONS.emoji_names()
+            media_keys = EXPRESSIONS.media_keys()
+            n_stickers = sum(
+                1 for k in media_keys
+                if (EXPRESSIONS.media_entry(k) or {}).get("type") == "sticker"
+            )
+            n_files = sum(
+                1 for k in media_keys
+                if (EXPRESSIONS.media_entry(k) or {}).get("type") == "file"
+            )
+            n_urls = sum(
+                1 for k in media_keys
+                if (EXPRESSIONS.media_entry(k) or {}).get("type") == "url"
+            )
+            flags = (
+                f"react {'✓' if CFG.expressions_allow_reactions else '✗'}  "
+                f"sticker {'✓' if CFG.expressions_allow_stickers else '✗'}  "
+                f"attach {'✓' if CFG.expressions_allow_attachments else '✗'}"
+            )
+            lines.append(f"  Status: ✅ enabled  ·  {flags}")
+            lines.append(
+                f"  Pool: {len(emoji_names)} emoji, {len(media_keys)} media "
+                f"({n_stickers} sticker / {n_files} file / {n_urls} url)"
+            )
+            lines.append(
+                f"  Prompt limit: {CFG.expressions_prompt_limit}/category  ·  "
+                f"reaction cap: {CFG.expressions_max_reactions}/msg"
+            )
+        else:
+            lines.append("  Status: ❌ disabled (LLM is not told about emoji/media)")
+
+        # ─── 5. Chat gating ──────────────────────────────────────────
+        lines.append("")
+        lines.append("__**Chat gating**__")
+        chat_state = "enabled" if CFG.chat_enabled else "disabled (mode excludes chat)"
+        lines.append(f"  Chat: {chat_state}")
+        allowlist = (
+            ", ".join(CFG.chat_allowed_roles) if CFG.chat_allowed_roles else "everyone"
+        )
+        lines.append(f"  Role allowlist: {allowlist}")
+        lines.append(f"  Proactive chance: {CFG.proactive_reply_chance:.3f}")
+        quiet_state = "off"
+        if CFG.quiet_hours_enabled:
+            active = "ACTIVE NOW" if in_quiet_hours() else "idle"
+            quiet_state = (
+                f"on ({active}) — {CFG.quiet_hours_start}–{CFG.quiet_hours_end} "
+                f"{CFG.quiet_hours_timezone}"
+            )
+        lines.append(f"  Quiet hours: {quiet_state}")
+        ignored = (
+            ", ".join(CFG.ignored_channels) if CFG.ignored_channels else "(none)"
+        )
+        lines.append(f"  Ignored channels: {ignored}")
+
+        # ─── 6. Permissions (this channel) ───────────────────────────
+        # Only the perms that matter for the autonomous + expressive features.
+        # For a full breakdown, refer to !perms.
+        if ctx.guild:
+            me = ctx.guild.me
+            if me is not None:
+                try:
+                    p = ctx.channel.permissions_for(me)
+                    lines.append("")
+                    lines.append(f"__**Permissions in {ctx.channel.mention}**__")
+                    checks = [
+                        ("Send Messages",       p.send_messages,        True),
+                        ("Read History",        p.read_message_history, True),
+                        ("Manage Messages",     p.manage_messages,      True),
+                        ("Manage Webhooks",     p.manage_webhooks,      True),
+                        ("Moderate Members",    p.moderate_members,     True),
+                        ("Add Reactions",       p.add_reactions,        CFG.expressions_allow_reactions),
+                        ("Use External Emoji",  p.use_external_emojis,  CFG.expressions_allow_reactions),
+                        ("Use External Stickers", p.use_external_stickers, CFG.expressions_allow_stickers),
+                        ("Attach Files",        p.attach_files,         CFG.expressions_allow_attachments),
+                        ("Embed Links",         p.embed_links,          False),  # nice-to-have
+                    ]
+                    for name, ok, required in checks:
+                        if required and not ok:
+                            mark = "❌"
+                            tail = "  ← REQUIRED for an enabled feature"
+                        elif ok:
+                            mark = "✅"
+                            tail = ""
+                        else:
+                            mark = "·"
+                            tail = ""
+                        lines.append(f"  {mark} {name}{tail}")
+                    lines.append("  (run `!perms` for the full breakdown)")
+                except Exception as e:
+                    lines.append(f"  Permissions check failed: `{e}`")
+
+        # ─── 7. Verbose extras ───────────────────────────────────────
+        if is_verbose:
+            lines.append("")
+            lines.append("__**Catalogs (verbose)**__")
+            # Personas
+            lines.append(f"  Personas ({len(PERSONAS.list_personas())}):")
+            for k in PERSONAS.list_personas():
+                moods = ", ".join(PERSONAS.list_moods(k))
+                marker = "→" if k == PERSONAS.active_key else " "
+                lines.append(f"    {marker} `{k}` — moods: {moods}")
+            # Emoji
+            emoji_names = EXPRESSIONS.emoji_names()
+            lines.append(f"  Emoji ({len(emoji_names)}): "
+                         + (", ".join(f"`{n}`" for n in emoji_names) or "(none)"))
+            # Media
+            media_keys = EXPRESSIONS.media_keys()
+            if media_keys:
+                lines.append(f"  Media ({len(media_keys)}):")
+                for k in media_keys:
+                    entry = EXPRESSIONS.media_entry(k) or {}
+                    lines.append(f"    `{k}` ({entry.get('type', '?')})")
+            else:
+                lines.append("  Media: (none)")
+
+        # Send in chunks if the output exceeds Discord's per-message limit.
+        # We split on blank lines (section boundaries) to keep groups together.
+        text = "\n".join(lines)
+        if len(text) <= 1900:
+            await reply_permanent(ctx, text)
+            return
+
+        # Multi-chunk: greedily pack sections under 1900 chars each.
+        chunks: list[str] = []
+        current: list[str] = []
+        current_len = 0
+        for line in lines:
+            # Account for the newline that will rejoin them.
+            add_len = len(line) + 1
+            if current_len + add_len > 1850 and current:
+                chunks.append("\n".join(current))
+                current = []
+                current_len = 0
+            current.append(line)
+            current_len += add_len
+        if current:
+            chunks.append("\n".join(current))
+
+        for i, chunk in enumerate(chunks):
+            header = f"(diag {i + 1}/{len(chunks)})\n" if len(chunks) > 1 else ""
+            await reply_permanent(ctx, header + chunk)
 
     # ---------- user info from moderation store ----------
     @commands.command(name="strikes")

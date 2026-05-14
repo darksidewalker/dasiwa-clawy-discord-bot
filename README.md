@@ -928,7 +928,8 @@ docstring of any specific command.
 | `!sleep 30m` / `!sleep 2h` / `!sleep 1h30m`            | Sleep for a duration, auto-wake. |
 | `!wake`                                                | Wake immediately. |
 | `!sleepstatus`                                         | Show sleep state and time-until-wake. |
-| `!diag`                                                | Health check: Ollama, model, mode, persona, gating, DB. |
+| `!diag`                                                | Health check across all subsystems: Ollama, log channel, DB, persona, moderation, expressions, gating, permissions. |
+| `!diag verbose`                                        | Same plus full catalog listings (every emoji name, every media key, every persona's moods). |
 
 ### Mode and persona
 
