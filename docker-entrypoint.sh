@@ -48,7 +48,7 @@ if ! [ -w "${CONFIG_DIR}" ]; then
     warn "  pre-populated the volume with config files."
 fi
 
-for f in config.yaml personas.json role_rules.json; do
+for f in config.yaml personas.json role_rules.json emoji_mapping.json media_pool.json; do
     if [ ! -f "${CONFIG_DIR}/${f}" ]; then
         if [ "${CONFIG_WRITABLE}" = "1" ]; then
             if cp "${DEFAULTS_DIR}/${f}" "${CONFIG_DIR}/${f}" 2>/dev/null; then
