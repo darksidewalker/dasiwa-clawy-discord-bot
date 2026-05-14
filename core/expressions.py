@@ -487,16 +487,43 @@ async def send_with_extras(
         else:
             return None
 
-    # ---- Apply reactions to the new message (NOT the reference) ----
-    # Reactions go on what Clawy just said, expressing her own punctuation.
+    # ---- Apply reactions to the USER'S message (the reference), not Clawy's own ----
+    # If there's no reference (e.g. !jumpin posts unprompted into a channel),
+    # silently drop reactions — Clawy never reacts to her own outgoing messages.
     if react_tokens:
-        await _apply_reactions(sent, react_tokens)
+        if reference is not None:
+            await _apply_reactions(reference, react_tokens)
+        else:
+            log.debug(
+                "send_with_extras: dropping %d reaction(s) — no reference message "
+                "to react to (Clawy never reacts to her own messages)",
+                len(react_tokens),
+            )
 
     return sent
 
 
 async def _apply_reactions(message: discord.Message, tokens: list[str]) -> None:
-    """Best-effort: add each reaction. Per-token failures are silent."""
+    """Best-effort: add each reaction. Per-token failures are silent.
+
+    Hard rule: NEVER react to a message authored by the bot itself, even if a
+    caller mistakenly passes one. Belt-and-braces guard so Clawy can never end
+    up reacting to her own messages regardless of how the call chain evolves.
+    """
+    # Refuse to react to our own messages. message.author is the bot itself
+    # when Clawy authored the message; comparing via the client cache is the
+    # most reliable check across user/member subtypes.
+    try:
+        guild = message.guild
+        me_id = guild.me.id if guild is not None and guild.me is not None else None
+        if me_id is not None and message.author.id == me_id:
+            log.debug("refusing to react to Clawy's own message (id=%s)", message.id)
+            return
+    except AttributeError:
+        # Fall through — if we can't determine ownership we'll attempt the
+        # reaction. The main call site already filters via `reference`.
+        pass
+
     guild = message.guild
     for tok in tokens:
         emoji = _resolve_emoji(guild, tok)
@@ -527,10 +554,22 @@ async def react_to(
     Used by the moderation pipeline when the LLM picks `ignore` but still
     returns a `react` field — Clawy can "acknowledge" a message non-verbally.
     Returns the number of reactions successfully applied.
+
+    Refuses to react to messages authored by the bot itself, regardless of
+    how this function is called.
     """
     react_tokens = _coerce_react_list(tokens, cap)
     if not react_tokens:
         return 0
+    # Hard guard: never react to our own messages.
+    try:
+        guild = message.guild
+        me_id = guild.me.id if guild is not None and guild.me is not None else None
+        if me_id is not None and message.author.id == me_id:
+            log.debug("react_to: refusing to react to Clawy's own message")
+            return 0
+    except AttributeError:
+        pass
     applied = 0
     guild = message.guild
     for tok in react_tokens:
