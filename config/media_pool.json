@@ -1,0 +1,25 @@
+{
+  "_comment": "Pool of stickers and media Clawy can attach. Three types:\n  sticker: needs sticker_id (Discord sticker, get id by right-click → Copy ID in dev mode)\n  file:    needs path (absolute or relative to project root)\n  url:     needs url (will be fetched and posted; capped at 8 MB)\nDescriptions are what the LLM reads — write them as a vibe/use-case, not literal contents.",
+  "media": {
+    "shrug_video": {
+      "type": "file",
+      "path": "media/shrug.mp4",
+      "description": "comedic shrug — when feigning ignorance or dismissing a complaint"
+    },
+    "hellfire_gif": {
+      "type": "url",
+      "url": "https://example.com/your-hellfire.gif",
+      "description": "demonic fire — for intense agreement, threats, or savage moments"
+    },
+    "sticker_skull": {
+      "type": "sticker",
+      "sticker_id": "0000000000000000000",
+      "description": "skull sticker — for when something is dead/over/savage (replace sticker_id with a real one from your server)"
+    },
+    "polite_clap": {
+      "type": "file",
+      "path": "media/polite_clap.gif",
+      "description": "slow sarcastic clapping — when someone says something obvious or unimpressive"
+    }
+  }
+}

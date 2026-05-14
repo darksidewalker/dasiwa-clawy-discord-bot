@@ -103,6 +103,20 @@ notify_user:
   channel_notice: true         # post the short auto-deleting message in the channel
   notice_seconds: 20           # how long the channel notice stays visible (3..300)
 
+# ---- Expressive output (reactions / stickers / media pool) ----
+# When chatting or moderating, Clawy can optionally react with emoji, send a
+# sticker from the server's pool, or attach an image/video/GIF from a curated
+# pool. The LLM is told what's available and decides per-response whether to
+# use any of it. Mapping files: config/emoji_mapping.json + config/media_pool.json
+# (both hot-reloadable via `!expressions reload` or `!reload`).
+expressions:
+  enabled: true                # master switch — false hides everything from the LLM
+  allow_reactions: true        # she may react with emoji (custom or Unicode)
+  allow_stickers: true         # she may post stickers
+  allow_attachments: true      # she may post images/videos/GIFs from the pool
+  prompt_limit: 30             # max items of each category to advertise per turn (3..100)
+  max_reactions_per_message: 3 # safety cap on reactions per message (1..20)
+
 # ---- Actions the LLM is allowed to pick autonomously ----
 # Kick and ban are intentionally absent — the LLM can never execute them.
 # If the LLM tries to pick kick/ban, it is flagged for human review instead.

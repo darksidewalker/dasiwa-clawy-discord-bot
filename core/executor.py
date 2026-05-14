@@ -22,6 +22,7 @@ from typing import Any
 import discord
 
 from .config import CFG
+from .expressions import react_to, send_with_extras
 from .store import STORE
 
 log = logging.getLogger(__name__)
@@ -113,15 +114,42 @@ async def execute(
     try:
         # ── ignore ───────────────────────────────────────────────────
         if act == "ignore":
+            # Even on "ignore", the LLM may have included a "react" field —
+            # a non-verbal acknowledgment (e.g. 💀 on a savage burn). Apply
+            # it best-effort; failure is silent.
+            if CFG.expressions_enabled and CFG.expressions_allow_reactions:
+                react_field = action.get("react")
+                if react_field:
+                    try:
+                        await react_to(
+                            message,
+                            react_field,
+                            cap=CFG.expressions_max_reactions,
+                        )
+                    except Exception as e:
+                        log.debug("react-on-ignore failed: %s", e)
             return "ignored"
 
         # ── reply ────────────────────────────────────────────────────
         if act == "reply":
             text = str(action.get("message", "")).strip()[:1800]
-            if not text:
+            # Allow reply with no text if there's a sticker or attach to post —
+            # send_with_extras handles that case. We only reject if there's
+            # truly nothing to send.
+            has_extras = bool(
+                action.get("sticker") or action.get("attach") or action.get("react")
+            )
+            if not text and not has_extras:
                 return "reply: empty message"
-            await message.channel.send(text, reference=message, mention_author=False)
-            return f"replied"
+            sent = await send_with_extras(
+                message.channel,
+                text,
+                action,
+                cfg=CFG,
+                reference=message,
+                mention_author=False,
+            )
+            return "replied" if sent is not None else "reply: nothing sent"
 
         # Protection check for all punitive actions
         if is_member and _is_protected(author):
@@ -180,8 +208,13 @@ async def execute(
         if act == "warn":
             text = str(action.get("message", "")).strip() or f"Watch yourself. {reason}"
             text = text[:1800]
-            await message.channel.send(
+            # Prepend mention to the message body (send_with_extras passes
+            # content through as-is, including any leading mention).
+            await send_with_extras(
+                message.channel,
                 f"{author.mention} {text}",
+                action,
+                cfg=CFG,
                 reference=message,
                 mention_author=False,
             )

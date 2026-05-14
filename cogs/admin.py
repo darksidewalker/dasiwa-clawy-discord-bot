@@ -11,6 +11,7 @@ from discord.ext import commands
 
 from core.config import CFG, VALID_MODES
 from core.executor import execute_ban, execute_kick, execute_mute
+from core.expressions import EXPRESSIONS, send_with_extras
 from core.gating import in_quiet_hours, quiet_status_line
 from core.ollama_client import OLLAMA
 from core.persona import PERSONAS
@@ -91,6 +92,7 @@ class AdminCog(CleanCommandCog):
                 ("persona", "show/switch persona (or reload)"),
                 ("mood",    "show/switch mood for active persona"),
                 ("dynmood", "toggle LLM autonomous mood switching"),
+                ("expressions", "show/reload emoji + media pool"),
                 ("model",   "show/switch Ollama model (session)"),
                 ("think",   "toggle Ollama reasoning trace on/off"),
             ]),
@@ -118,6 +120,7 @@ class AdminCog(CleanCommandCog):
                 ("movelast", "move a user's last N messages to a channel"),
             ]),
             ("Message purging", [
+                ("purgethis", "delete a single replied-to message (always notifies)"),
                 ("purge",     "delete last N messages in a channel (optional @user filter)"),
                 ("purgeuser", "delete last N messages from a user in a channel"),
             ]),
@@ -182,10 +185,18 @@ class AdminCog(CleanCommandCog):
             log.warning("reload personas.json failed: %s", e)
             reloaded.append(f"personas.json (FAILED: {e})")
 
-        # 3. role_rules.json
+        # 3. emoji_mapping.json + media_pool.json
+        try:
+            ne, nm = EXPRESSIONS.reload()
+            reloaded.append(f"expressions ({ne} emoji, {nm} media)")
+        except Exception as e:
+            log.warning("reload expressions failed: %s", e)
+            reloaded.append(f"expressions (FAILED: {e})")
+
+        # 4. role_rules.json
         reloaded.append(_reload_role_rules())
 
-        # 4. blocklist
+        # 5. blocklist
         if _blocklist_enabled():
             try:
                 n = BLOCKLIST.reload(_blocklist_path())
@@ -195,7 +206,7 @@ class AdminCog(CleanCommandCog):
         else:
             reloaded.append("blocklist (disabled)")
 
-        # 5. Reset ALL session overrides to force YAML values
+        # 6. Reset ALL session overrides to force YAML values
         CFG.state.mode_override = None
         CFG.state.model_override = None
         CFG.state.think_override = None
@@ -262,6 +273,65 @@ class AdminCog(CleanCommandCog):
             await ack(ctx, 
                 f"Unknown mood `{mood_name}`. Available: {', '.join(PERSONAS.list_moods())}"
             )
+
+    # ---------- expressions (emoji + media pool) ----------
+    @commands.command(name="expressions")
+    async def expressions(self, ctx: commands.Context, sub: str = "") -> None:
+        """Show the loaded emoji mapping and media pool, or reload them.
+
+        Usage:
+          !expressions          — list emoji and media keys with descriptions
+          !expressions reload   — reload emoji_mapping.json and media_pool.json
+        """
+        if sub == "reload":
+            try:
+                ne, nm = EXPRESSIONS.reload()
+            except Exception as e:
+                log.warning("expressions reload failed: %s", e)
+                await ack(ctx, f"Reload failed: `{e}`")
+                return
+            await ack(ctx, f"Expressions reloaded: {ne} emoji, {nm} media items.")
+            return
+
+        # No subcommand — show what's loaded.
+        emoji_names = EXPRESSIONS.emoji_names()
+        media_keys = EXPRESSIONS.media_keys()
+
+        lines = [
+            f"**Expressions**  ·  enabled: `{CFG.expressions_enabled}`",
+            (
+                f"react: `{CFG.expressions_allow_reactions}`  ·  "
+                f"sticker: `{CFG.expressions_allow_stickers}`  ·  "
+                f"attach: `{CFG.expressions_allow_attachments}`  ·  "
+                f"prompt_limit: `{CFG.expressions_prompt_limit}`  ·  "
+                f"max_reactions: `{CFG.expressions_max_reactions}`"
+            ),
+            "",
+            f"__Emoji ({len(emoji_names)})__",
+        ]
+        if emoji_names:
+            for name in emoji_names[:40]:
+                desc = EXPRESSIONS.emoji_description(name) or ""
+                lines.append(f"  `{name}` — {desc[:120]}")
+            if len(emoji_names) > 40:
+                lines.append(f"  …and {len(emoji_names) - 40} more")
+        else:
+            lines.append("  (none — edit `config/emoji_mapping.json`)")
+
+        lines.append("")
+        lines.append(f"__Media pool ({len(media_keys)})__")
+        if media_keys:
+            for key in media_keys[:40]:
+                entry = EXPRESSIONS.media_entry(key) or {}
+                t = entry.get("type", "?")
+                desc = entry.get("description", "")
+                lines.append(f"  `{key}` ({t}) — {desc[:120]}")
+            if len(media_keys) > 40:
+                lines.append(f"  …and {len(media_keys) - 40} more")
+        else:
+            lines.append("  (none — edit `config/media_pool.json`)")
+
+        await reply_permanent(ctx, "\n".join(lines)[:1900])
 
     # ---------- model ----------
     @commands.command(name="model")
@@ -828,7 +898,7 @@ class AdminCog(CleanCommandCog):
             return
 
         try:
-            await ctx.channel.send(text)
+            await send_with_extras(ctx.channel, text, result, cfg=CFG)
         except discord.DiscordException as e:
             log.warning("!jumpin send failed: %s", e)
             await ack(ctx, f"❌ Send failed: {type(e).__name__}")

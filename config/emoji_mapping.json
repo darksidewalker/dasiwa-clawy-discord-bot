@@ -1,0 +1,19 @@
+{
+  "_comment": "Maps emoji names to descriptions. The LLM uses the descriptions to decide when to use a given emoji. Custom server emoji are looked up by name in the guild — make sure the name matches exactly what Discord shows for that emoji. Standard Unicode emoji can either be referenced by a name (e.g. 'fire' → '🔥' in the LLM's react list) or used directly as the Unicode character. The keys here are the names the LLM will reach for; for Unicode entries, you can encode them as the literal character or as a named alias.",
+  "emoji": {
+    "fire": "intense agreement, hype, savage, something is hot — 🔥",
+    "skull": "dead laughing, savage, brutal — 💀",
+    "smirk": "knowing, sly, cheeky amusement — 😏",
+    "eyes": "watching, curious, suspicious, interested — 👀",
+    "thinking": "skeptical, considering, doubtful — 🤔",
+    "100": "agreement, perfect, on point — 💯",
+    "clap": "applause, sincere or sarcastic acknowledgment — 👏",
+    "salute": "respect, acknowledgment, dismissal — 🫡",
+    "facepalm": "secondhand embarrassment, exasperation — 🫣",
+    "rofl": "genuine laughter — 🤣",
+    "heart": "warmth, affection, approval — ❤️",
+    "crown": "respect, royalty, dominance — 👑",
+    "snake": "betrayal, sly, devious — 🐍",
+    "wave": "greeting, farewell, dismissal - 👋"
+  }
+}

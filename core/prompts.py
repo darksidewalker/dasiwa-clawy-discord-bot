@@ -15,7 +15,21 @@ from __future__ import annotations
 from typing import Any
 
 from .config import CFG
+from .expressions import build_expressions_prompt_block, schema_extension_doc
 from .persona import PERSONAS
+
+
+def _expressions_block() -> str:
+    """Returns the EXPRESSIVE OUTPUT prompt section, or empty if disabled."""
+    if not CFG.expressions_enabled:
+        return ""
+    return build_expressions_prompt_block(
+        allow_reactions=CFG.expressions_allow_reactions,
+        allow_stickers=CFG.expressions_allow_stickers,
+        allow_attachments=CFG.expressions_allow_attachments,
+        prompt_limit=CFG.expressions_prompt_limit,
+        max_reactions_per_message=CFG.expressions_max_reactions,
+    )
 
 
 ACTION_SCHEMA_DOC = """\
@@ -29,7 +43,10 @@ Schema:
   "message":  string,   // optional — required when action is "reply" or "warn"
   "role":     string,   // optional — role NAME for assign_role / remove_role
   "duration_seconds": integer,  // optional — for "timeout", default 600
-  "mood_switch": string // optional — switch your mood (only if dynamic_mood is enabled)
+  "mood_switch": string,// optional — switch your mood (only if dynamic_mood is enabled)
+  "react":    array of strings,  // optional — emoji to react with (see EXPRESSIVE OUTPUT)
+  "sticker":  string,            // optional — key from sticker list
+  "attach":   string             // optional — key from media list
 }
 
 Rules:
@@ -42,6 +59,8 @@ Rules:
 - If you're unsure, choose "ignore". It's better to miss a rule-break than
   punish innocent conversation. The admins will handle edge cases manually.
 - Keep "message" in your persona voice, short, 1–2 lines (for warn only).
+- You may pair "ignore" with a "react" field — that lets you acknowledge a
+  message non-verbally (e.g. a 💀 on a savage burn) without intervening.
 """
 
 
@@ -102,6 +121,7 @@ def build_system_prompt(allowed: set[str], *, channel_name: str = "") -> str:
         f"{ACTION_SCHEMA_DOC}"
         f"{nsfw_note}"
         f"{mood_note}"
+        f"{_expressions_block()}"
     )
 
 
@@ -148,6 +168,8 @@ def build_chat_system_prompt(is_owner: bool = False, owner_name: str = "Master",
             f"You MUST output ONLY a raw JSON object — no prose before or after it, "
             f"no markdown fences, no explanation. The ONLY valid output is:\n"
             f"{{\"message\": \"your reply here\"}}\n"
+            f"Optional fields you may include:\n"
+            f"{schema_extension_doc()}"
             f"{mood_json_note}"
         )
     else:
@@ -163,10 +185,12 @@ def build_chat_system_prompt(is_owner: bool = False, owner_name: str = "Master",
             "You MUST output ONLY a raw JSON object — no prose before or after it, "
             "no markdown fences, no explanation. The ONLY valid output is:\n"
             "{\"message\": \"your reply here\"}\n"
+            f"Optional fields you may include:\n"
+            f"{schema_extension_doc()}"
             f"{mood_json_note}"
         )
 
-    return prompt
+    return prompt + _expressions_block()
 
 
 def build_user_prompt(ctx: dict[str, Any]) -> str:

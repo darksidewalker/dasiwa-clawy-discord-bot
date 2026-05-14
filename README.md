@@ -28,6 +28,7 @@ costs, no data leaving your server.
 10. [Activity-based roles](#10-activity-based-roles)
 11. [Message moving](#11-message-moving)
     - [User notifications on delete / move / purge](#user-notifications-on-delete--move--purge)
+    - [Expressive output: reactions, stickers, media](#expressive-output-reactions-stickers-media)
 12. [Rate limiting and anti-spam](#12-rate-limiting-and-anti-spam)
 13. [Sleep mode and quiet hours](#13-sleep-mode-and-quiet-hours)
 14. [Memory and database](#14-memory-and-database)
@@ -617,6 +618,147 @@ during purges.
 
 ---
 
+## Expressive output: reactions, stickers, media
+
+In addition to text replies, Clawy can:
+
+- **React** to a message with one or more emoji (custom server emoji or Unicode).
+- Post a **sticker** from a curated pool.
+- **Attach** an image, video, or GIF from a curated pool (local file or remote URL).
+
+All three are optional and entirely the LLM's choice per-response. The LLM is
+told what's available — including a free-text description of each item — and
+decides whether any of it fits the moment. Default is "no extras"; reactions
+and media are sprinkled in when they genuinely add to the response.
+
+### Configuration files
+
+Two hot-reloadable JSON files in `config/`:
+
+**`emoji_mapping.json`** — names and descriptions of emoji Clawy should know about.
+
+```json
+{
+  "emoji": {
+    "fire": "intense agreement, hype, savage — 🔥",
+    "skull": "dead laughing, savage, brutal — 💀",
+    "catjam": "celebration, dancing — strong positive reaction",
+    "sideeye": "skeptical, judgmental, doubting"
+  }
+}
+```
+
+The *key* is the emoji name. For custom server emoji, the key must match the
+emoji's name in Discord exactly. For Unicode emoji, the key is whatever short
+name you give it (Clawy uses the description to decide what to use). Including
+the literal Unicode character in the description lets the LLM include it
+directly in the `react` list.
+
+**`media_pool.json`** — stickers and media attachments by key.
+
+```json
+{
+  "media": {
+    "shrug_video": {
+      "type": "file",
+      "path": "media/shrug.mp4",
+      "description": "comedic shrug — feigning ignorance or dismissal"
+    },
+    "hellfire_gif": {
+      "type": "url",
+      "url": "https://example.com/hellfire.gif",
+      "description": "demonic fire — intense agreement or threats"
+    },
+    "sticker_skull": {
+      "type": "sticker",
+      "sticker_id": "1234567890",
+      "description": "skull sticker — when something is dead/over/savage"
+    }
+  }
+}
+```
+
+Entry types:
+
+| `type`    | Required fields | Notes |
+|-----------|---|---|
+| `sticker` | `sticker_id`, `description` | Must be a sticker the bot can use (server stickers, or external if the bot has Use External Stickers). Get the ID with developer mode → right-click → Copy ID. |
+| `file`    | `path`, `description` | Local file path. Relative paths resolve from project root. |
+| `url`     | `url`, `description` | Fetched at send time, capped at 8 MB. Use for hosted GIFs/images. |
+
+### How the LLM uses them
+
+The LLM's JSON output gains three optional fields:
+
+```json
+{
+  "message": "Oh, that's a bold move.",
+  "react": ["skull", "💀"],
+  "sticker": "sticker_skull",
+  "attach": "polite_clap"
+}
+```
+
+- `react`: list of emoji names (from the mapping) or raw Unicode characters. Capped by `expressions.max_reactions_per_message`.
+- `sticker`: a single key from `media_pool.json` whose entry has `type: sticker`.
+- `attach`: a single key from `media_pool.json` whose entry has `type: file` or `type: url`.
+
+A reaction can also be paired with `"action": "ignore"` — Clawy acknowledges a
+message non-verbally (a 💀 on a savage burn, for example) without intervening.
+
+If the LLM accidentally writes `:emoji_name:` inside the visible message body,
+those shortcodes are stripped from the text and turned into reactions instead,
+since Discord doesn't render `:name:` as the actual emoji via the API.
+
+### Configuration
+
+In `config/config.yaml`:
+
+```yaml
+expressions:
+  enabled: true                # master switch — false hides everything from the LLM
+  allow_reactions: true        # she may react with emoji
+  allow_stickers: true         # she may post stickers
+  allow_attachments: true      # she may post images/videos/GIFs
+  prompt_limit: 30             # max items of each category advertised per turn (3..100)
+  max_reactions_per_message: 3 # safety cap on reactions per message (1..20)
+```
+
+When the pool is bigger than `prompt_limit`, Clawy sees a different random
+subset of items per turn — so she doesn't fixate on the first ones and so the
+prompt stays bounded in size.
+
+### Permissions and limits
+
+| Feature | Required permission | Notes |
+|---|---|---|
+| Reactions | **Add Reactions** | In the channel where the reaction is posted. |
+| Custom emoji from other servers as reactions | **Use External Emoji** | Default for most bots. |
+| Stickers | **Send Messages** | For server stickers. |
+| External stickers | **Use External Stickers** | If you want stickers from outside the guild. |
+| URL attachments | None special | Capped at 8 MB per fetch. |
+
+Anything that fails — missing permission, unreachable URL, oversized file,
+unresolved emoji — is logged at debug/warning and silently skipped. The text
+message always posts even if the extras fail.
+
+### Admin command
+
+`!expressions` — show what's loaded (emoji names + descriptions, media keys + types).
+
+`!expressions reload` — re-read both JSON files from disk. Also wired into the
+global `!reload` command alongside `personas.json` and the blocklist.
+
+### Future: vision
+
+The prompt currently tells the LLM only about *outgoing* expressions. When a
+vision-capable model is wired in later, an additional input channel — "the
+user just posted an image, here's a compressed downscaled version" — would let
+Clawy react to incoming images and videos directly. The expressions output
+side is already wired and would just be the response surface.
+
+---
+
 ## 12. Rate limiting and anti-spam
 
 ### Message volume spam
@@ -983,6 +1125,18 @@ notify_user:
   dm: true                     # DM the affected user (best-effort)
   channel_notice: true         # post short auto-deleting message in the channel
   notice_seconds: 20           # how long the channel notice stays (3..300)
+
+# ── Expressive output (reactions / stickers / media pool) ────────────
+# Clawy can react with emoji, post stickers, and attach media from
+# curated pools. Mapping files: config/emoji_mapping.json and
+# config/media_pool.json (hot-reloadable via !expressions reload).
+expressions:
+  enabled: true                # master switch — false hides everything from the LLM
+  allow_reactions: true        # may react with emoji (custom or Unicode)
+  allow_stickers: true         # may post stickers
+  allow_attachments: true      # may post images/videos/GIFs from the pool
+  prompt_limit: 30             # max items of each category per turn (3..100)
+  max_reactions_per_message: 3 # safety cap (1..20)
 
 # ── Allowed LLM actions ──────────────────────────────────────────────
 # Kick and ban are intentionally absent — the LLM can never execute them.

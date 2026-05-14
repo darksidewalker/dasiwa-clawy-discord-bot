@@ -22,6 +22,7 @@ from discord.ext import commands
 
 from core.config import CFG
 from core.executor import execute
+from core.expressions import send_with_extras
 from core.gating import in_quiet_hours, is_chat_allowed
 from core.ollama_client import OLLAMA
 from core.persona import PERSONAS
@@ -421,7 +422,14 @@ class ModerationCog(commands.Cog):
         text = text[:1800]
 
         try:
-            await message.channel.send(text, reference=message, mention_author=False)
+            await send_with_extras(
+                message.channel,
+                text,
+                result,
+                cfg=CFG,
+                reference=message,
+                mention_author=False,
+            )
         except discord.DiscordException as e:
             log.warning("chat reply failed: %s", e)
             return

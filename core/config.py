@@ -286,6 +286,43 @@ class Config:
         v = int(self.raw.get("notify_user", {}).get("notice_seconds", 20))
         return max(3, min(v, 300))
 
+    # ---- expressions (reactions / stickers / media pool) ----
+    @property
+    def expressions_enabled(self) -> bool:
+        """Master switch for emoji reactions, stickers, and media attachments.
+        When False, none of the expressions.* features fire and the prompt
+        injection that advertises them to the LLM is skipped."""
+        return bool(self.raw.get("expressions", {}).get("enabled", True))
+
+    @property
+    def expressions_allow_reactions(self) -> bool:
+        return bool(self.raw.get("expressions", {}).get("allow_reactions", True))
+
+    @property
+    def expressions_allow_stickers(self) -> bool:
+        return bool(self.raw.get("expressions", {}).get("allow_stickers", True))
+
+    @property
+    def expressions_allow_attachments(self) -> bool:
+        return bool(self.raw.get("expressions", {}).get("allow_attachments", True))
+
+    @property
+    def expressions_prompt_limit(self) -> int:
+        """How many of each category (emoji / stickers / media) to advertise
+        in the system prompt per turn. Higher = more variety but more tokens
+        spent. Random sampling so the LLM sees different items over time.
+        Clamped to [3, 100]."""
+        v = int(self.raw.get("expressions", {}).get("prompt_limit", 30))
+        return max(3, min(v, 100))
+
+    @property
+    def expressions_max_reactions(self) -> int:
+        """Hard cap on how many reactions Clawy may add per message.
+        Discord's hard limit is 20, but anything above ~3 is visual spam.
+        Clamped to [1, 20]."""
+        v = int(self.raw.get("expressions", {}).get("max_reactions_per_message", 3))
+        return max(1, min(v, 20))
+
 
 # Module-level singleton
 CFG = Config.load()
