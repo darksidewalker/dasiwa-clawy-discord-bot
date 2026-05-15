@@ -24,6 +24,7 @@ from core.config import CFG
 from core.executor import execute
 from core.expressions import send_with_extras
 from core.gating import in_quiet_hours, is_chat_allowed
+from core.triggers import TRIGGERS, fire_trigger
 from core.ollama_client import OLLAMA
 from core.persona import PERSONAS
 from core.prefilter import prefilter
@@ -135,6 +136,43 @@ class ModerationCog(commands.Cog):
                     extra=f'{{"duration_seconds": {dur}}}',
                 )
                 return
+
+        # ========== TRIGGERS (deterministic, no LLM) ==========
+        # Keyword/regex triggers from config/triggers.json. They fire as a
+        # parallel reflex: matched media posts immediately, and the message
+        # also continues through the normal chat/mod paths below. Triggers
+        # respect chat gating (allowlist, ignored channels) since they
+        # share the same "is Clawy allowed to speak here?" semantics.
+        if CFG.triggers_enabled and CFG.chat_enabled:
+            if is_chat_allowed(message.author):
+                fired = 0
+                # Cap: usually 1, but configurable in case you want multiple.
+                # We loop with a temporary skip-set so we don't fire the same
+                # trigger twice in one message, and so we walk past cooldown
+                # collisions to find another match.
+                fired_names: set[str] = set()
+                remaining = CFG.triggers_max_per_message
+                while remaining > 0:
+                    text = message.content
+                    trig = TRIGGERS.find_match(
+                        text, message.channel.id, skip=fired_names,
+                    )
+                    if trig is None:
+                        break
+                    try:
+                        if await fire_trigger(trig, message):
+                            TRIGGERS.mark_fired(trig.name, message.channel.id)
+                            fired += 1
+                            fired_names.add(trig.name)
+                    except Exception as e:
+                        log.warning("trigger %r raised: %s", trig.name, e)
+                        fired_names.add(trig.name)  # don't retry the same one
+                    remaining -= 1
+                if fired:
+                    log.debug(
+                        "fired %d trigger(s) on message %s in #%s",
+                        fired, message.id, getattr(message.channel, "name", "?"),
+                    )
 
         # ========== OWNER SHORTCUT ==========
         # Owner always goes straight to chat with full submission dynamic.

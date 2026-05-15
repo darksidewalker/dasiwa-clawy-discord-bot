@@ -1,0 +1,32 @@
+{
+  "_comment": "Deterministic message triggers. When a user's message matches, Clawy posts one of the listed media keys (referenced from media_pool.json) WITHOUT calling the LLM. Per-trigger fields:\n  name              unique label, used for cooldown keying and logs\n  type              'word' (case-insensitive, full-word match) or 'regex' (raw pattern)\n  patterns          list of strings — ANY match fires the trigger\n  media             list of media-pool keys — randomly picked when multiple\n  cooldown_seconds  per (trigger, channel) cooldown; 0 = no cooldown (not recommended)\n  reply_to_user     true = post as a reply to the user's message (recommended)\n  case_sensitive    regex-only; word triggers are always case-insensitive\n  description       optional, shown by `!triggers` listing\nTriggers are evaluated in config order; the first match per message fires.",
+  "triggers": [
+    {
+      "name": "f_respect",
+      "type": "word",
+      "patterns": ["press f", "press F"],
+      "media": ["polite_clap"],
+      "cooldown_seconds": 600,
+      "reply_to_user": true,
+      "description": "F to pay respects"
+    },
+    {
+      "name": "savage_call",
+      "type": "regex",
+      "patterns": ["\\b(savage|brutal|cold-?blooded)\\b"],
+      "media": ["sticker_skull", "polite_clap"],
+      "cooldown_seconds": 300,
+      "reply_to_user": true,
+      "description": "When the conversation gets savage"
+    },
+    {
+      "name": "hellfire_summon",
+      "type": "word",
+      "patterns": ["unleash hell", "burn it down"],
+      "media": ["hellfire_gif"],
+      "cooldown_seconds": 1800,
+      "reply_to_user": true,
+      "description": "Rare; intense hype moments"
+    }
+  ]
+}

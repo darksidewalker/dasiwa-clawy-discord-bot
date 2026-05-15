@@ -117,6 +117,16 @@ expressions:
   prompt_limit: 30             # max items of each category to advertise per turn (3..100)
   max_reactions_per_message: 3 # safety cap on reactions per message (1..20)
 
+# ---- Message triggers (deterministic, no LLM call) ----
+# When a user's message contains a configured keyword/phrase or matches a
+# configured regex, Clawy posts a media item from the media_pool without
+# invoking the LLM. Triggers respect chat gating, pause, and sleep state.
+# Mapping file: config/triggers.json (hot-reloadable via `!triggers reload`
+# or `!reload`). See README "Message triggers" for the trigger entry schema.
+triggers:
+  enabled: true                # master switch — false disables all trigger evaluation
+  max_per_message: 1           # how many triggers may fire on one message (1..5)
+
 # ---- Actions the LLM is allowed to pick autonomously ----
 # Kick and ban are intentionally absent — the LLM can never execute them.
 # If the LLM tries to pick kick/ban, it is flagged for human review instead.

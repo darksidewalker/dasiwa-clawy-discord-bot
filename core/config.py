@@ -323,6 +323,22 @@ class Config:
         v = int(self.raw.get("expressions", {}).get("max_reactions_per_message", 3))
         return max(1, min(v, 20))
 
+    # ---- triggers (deterministic media-on-keyword) ----
+    @property
+    def triggers_enabled(self) -> bool:
+        """Master switch for keyword/regex triggers that auto-post media.
+        When False, the triggers manager is loaded but never consulted by
+        the moderation pipeline."""
+        return bool(self.raw.get("triggers", {}).get("enabled", True))
+
+    @property
+    def triggers_max_per_message(self) -> int:
+        """Maximum number of triggers that may fire on a single user message.
+        Default and recommended value is 1 — more than one media post in
+        response to a single message looks like spam. Clamped to [1, 5]."""
+        v = int(self.raw.get("triggers", {}).get("max_per_message", 1))
+        return max(1, min(v, 5))
+
 
 # Module-level singleton
 CFG = Config.load()

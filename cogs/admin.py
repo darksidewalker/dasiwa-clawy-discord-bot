@@ -14,6 +14,7 @@ from core.config import CFG, VALID_MODES
 from core.executor import execute_ban, execute_kick, execute_mute
 from core.expressions import EXPRESSIONS, send_with_extras
 from core.gating import in_quiet_hours, quiet_status_line
+from core.triggers import TRIGGERS
 from core.ollama_client import OLLAMA
 from core.persona import PERSONAS
 from core.prefilter import BLOCKLIST, _blocklist_enabled, _blocklist_path
@@ -94,6 +95,7 @@ class AdminCog(CleanCommandCog):
                 ("mood",    "show/switch mood for active persona"),
                 ("dynmood", "toggle LLM autonomous mood switching"),
                 ("expressions", "show/reload emoji + media pool"),
+                ("triggers", "show/reload keyword→media triggers"),
                 ("model",   "show/switch Ollama model (session)"),
                 ("think",   "toggle Ollama reasoning trace on/off"),
             ]),
@@ -194,10 +196,18 @@ class AdminCog(CleanCommandCog):
             log.warning("reload expressions failed: %s", e)
             reloaded.append(f"expressions (FAILED: {e})")
 
-        # 4. role_rules.json
+        # 4. triggers.json
+        try:
+            nt = TRIGGERS.reload()
+            reloaded.append(f"triggers ({nt} loaded)")
+        except Exception as e:
+            log.warning("reload triggers failed: %s", e)
+            reloaded.append(f"triggers (FAILED: {e})")
+
+        # 5. role_rules.json
         reloaded.append(_reload_role_rules())
 
-        # 5. blocklist
+        # 6. blocklist
         if _blocklist_enabled():
             try:
                 n = BLOCKLIST.reload(_blocklist_path())
@@ -207,7 +217,7 @@ class AdminCog(CleanCommandCog):
         else:
             reloaded.append("blocklist (disabled)")
 
-        # 6. Reset ALL session overrides to force YAML values
+        # 7. Reset ALL session overrides to force YAML values
         CFG.state.mode_override = None
         CFG.state.model_override = None
         CFG.state.think_override = None
@@ -331,6 +341,54 @@ class AdminCog(CleanCommandCog):
                 lines.append(f"  …and {len(media_keys) - 40} more")
         else:
             lines.append("  (none — edit `config/media_pool.json`)")
+
+        await reply_permanent(ctx, "\n".join(lines)[:1900])
+
+    # ---------- triggers (deterministic media reflex) ----------
+    @commands.command(name="triggers")
+    async def triggers(self, ctx: commands.Context, sub: str = "") -> None:
+        """Show loaded triggers or reload them from config/triggers.json.
+
+        Usage:
+          !triggers          — list all loaded triggers with patterns and cooldowns
+          !triggers reload   — reload triggers.json from disk (preserves cooldown state)
+        """
+        if sub == "reload":
+            try:
+                n = TRIGGERS.reload()
+            except Exception as e:
+                log.warning("triggers reload failed: %s", e)
+                await ack(ctx, f"Reload failed: `{e}`")
+                return
+            await ack(ctx, f"Triggers reloaded: {n} loaded.")
+            return
+
+        # No subcommand — show what's loaded.
+        all_triggers = TRIGGERS.list_triggers()
+        lines = [
+            f"**Triggers**  ·  enabled: `{CFG.triggers_enabled}`  ·  "
+            f"max per message: `{CFG.triggers_max_per_message}`",
+            "",
+        ]
+        if not all_triggers:
+            lines.append("(none loaded — edit `config/triggers.json`)")
+        else:
+            for trig in all_triggers:
+                ch_id = ctx.channel.id
+                cd_remaining = TRIGGERS.cooldown_remaining(trig.name, ch_id)
+                cd_state = (
+                    f"⏳{cd_remaining}s here" if cd_remaining > 0
+                    else "ready here"
+                )
+                lines.append(
+                    f"`{trig.name}` ({trig.type})  ·  cooldown {trig.cooldown_seconds}s  "
+                    f"·  {cd_state}"
+                )
+                lines.append(f"  patterns: {trig.pattern_summary()}")
+                lines.append(f"  media: {', '.join(f'`{m}`' for m in trig.media)}")
+                if trig.description:
+                    lines.append(f"  — {trig.description}")
+                lines.append("")
 
         await reply_permanent(ctx, "\n".join(lines)[:1900])
 
@@ -535,6 +593,18 @@ class AdminCog(CleanCommandCog):
         else:
             lines.append("  Status: ❌ disabled (LLM is not told about emoji/media)")
 
+        # ─── 4b. Triggers ───────────────────────────────────────────
+        lines.append("")
+        lines.append("__**Triggers**__")
+        if CFG.triggers_enabled:
+            n_triggers = TRIGGERS.count()
+            lines.append(
+                f"  Status: ✅ enabled  ·  {n_triggers} loaded  ·  "
+                f"max {CFG.triggers_max_per_message}/message"
+            )
+        else:
+            lines.append("  Status: ❌ disabled (no triggers will fire)")
+
         # ─── 5. Chat gating ──────────────────────────────────────────
         lines.append("")
         lines.append("__**Chat gating**__")
@@ -618,6 +688,17 @@ class AdminCog(CleanCommandCog):
                     lines.append(f"    `{k}` ({entry.get('type', '?')})")
             else:
                 lines.append("  Media: (none)")
+            # Triggers
+            all_triggers = TRIGGERS.list_triggers()
+            if all_triggers:
+                lines.append(f"  Triggers ({len(all_triggers)}):")
+                for trig in all_triggers:
+                    lines.append(
+                        f"    `{trig.name}` ({trig.type}) → {', '.join(trig.media)}  "
+                        f"·  cooldown {trig.cooldown_seconds}s"
+                    )
+            else:
+                lines.append("  Triggers: (none)")
 
         # Send in chunks if the output exceeds Discord's per-message limit.
         # We split on blank lines (section boundaries) to keep groups together.

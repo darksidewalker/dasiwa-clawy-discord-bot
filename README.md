@@ -29,6 +29,7 @@ costs, no data leaving your server.
 11. [Message moving](#11-message-moving)
     - [User notifications on delete / move / purge](#user-notifications-on-delete--move--purge)
     - [Expressive output: reactions, stickers, media](#expressive-output-reactions-stickers-media)
+    - [Message triggers (keyword → media)](#message-triggers-keyword--media)
 12. [Rate limiting and anti-spam](#12-rate-limiting-and-anti-spam)
 13. [Sleep mode and quiet hours](#13-sleep-mode-and-quiet-hours)
 14. [Memory and database](#14-memory-and-database)
@@ -759,6 +760,137 @@ side is already wired and would just be the response surface.
 
 ---
 
+## Message triggers (keyword → media)
+
+A deterministic, zero-cost reflex layer. When a user's message contains a
+configured keyword/phrase or matches a configured regex, Clawy posts a media
+item from the media pool — **without** invoking the LLM. No roleplay
+reasoning, no latency, no cost. Just a reflex.
+
+Useful for:
+- Meme triggers (`press F` → respect image)
+- Catchphrase replies
+- Bringing a moment back when someone says a specific keyword
+
+Triggers fire **alongside** other paths. If someone says "press F" while
+mentioning Clawy, the F image posts AND her chat reply runs normally. They
+respect chat gating, pause, and sleep — a paused or sleeping Clawy doesn't
+fire triggers, and triggers only fire in channels where chat is allowed.
+
+### Configuration file
+
+`config/triggers.json` (hot-reloadable via `!triggers reload` or `!reload`):
+
+```json
+{
+  "triggers": [
+    {
+      "name": "f_respect",
+      "type": "word",
+      "patterns": ["press f", "press F"],
+      "media": ["polite_clap"],
+      "cooldown_seconds": 600,
+      "reply_to_user": true,
+      "description": "F to pay respects"
+    },
+    {
+      "name": "savage_call",
+      "type": "regex",
+      "patterns": ["\\b(savage|brutal|cold-?blooded)\\b"],
+      "media": ["sticker_skull", "polite_clap"],
+      "cooldown_seconds": 300,
+      "reply_to_user": true
+    }
+  ]
+}
+```
+
+### Field reference
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | yes | Unique label. Used in cooldown keying and logs. |
+| `type` | yes | `"word"` (case-insensitive, full-word match) or `"regex"` (raw pattern). |
+| `patterns` | yes | List of strings. ANY pattern matching fires the trigger. |
+| `media` | yes | List of media-pool keys (from `media_pool.json`). One is picked at random when multiple are listed. |
+| `cooldown_seconds` | no (default 300) | Per-channel cooldown. `0` = no cooldown (not recommended — turns triggers into spam). |
+| `reply_to_user` | no (default true) | When true, the media is posted as a reply to the matched message. When false, dropped into the channel plainly. |
+| `case_sensitive` | no (default false) | Regex-only. Word triggers are always case-insensitive. |
+| `description` | no | Shown in `!triggers` listing. |
+
+### Match semantics
+
+**Word triggers** are case-insensitive and use word boundaries:
+
+| Pattern `"f"` matches | Pattern `"f"` does NOT match |
+|---|---|
+| `"f"` | `"forty"` |
+| `"press F"` | `"of"` |
+| `"yeah, f"` | `"shaft"` |
+
+**Regex triggers** are compiled once at reload time. `re.IGNORECASE` by default;
+flip `case_sensitive: true` for case-sensitive matching. The `\b` shorthand
+for word boundaries works as in standard Python regex.
+
+### Cooldown
+
+Keyed on `(trigger_name, channel_id)`. In-memory only — resets on bot restart.
+A trigger on cooldown is silently skipped, and the matcher walks past it to
+look for the next matching trigger; so even on cooldown, another trigger may
+still fire on the same message.
+
+Cooldown state is preserved across `!triggers reload` and `!reload`. Editing
+the file doesn't reset cooldowns.
+
+### Multiple matches per message
+
+By default, only **one** trigger fires per message — the first one matching
+in config order. Bump `triggers.max_per_message` in `config.yaml` to allow
+more, capped at 5. Triggers that already fired in the same message are
+skipped, so you'll get up to N *different* triggers, not N copies of the
+same one.
+
+### Configuration
+
+```yaml
+triggers:
+  enabled: true                # master switch — false disables all triggers
+  max_per_message: 1           # cap per message (1..5)
+```
+
+### Admin command
+
+`!triggers` — list all loaded triggers, with patterns, cooldowns, and current
+cooldown state in the channel where the command was run.
+
+`!triggers reload` — reload `config/triggers.json` from disk. Also wired into
+the global `!reload`.
+
+### Ordering vs. moderation
+
+Triggers fire **after** the mention rate-limit (so trigger spam via pinging
+the bot doesn't bypass that) but **before** moderation/chat decisions. If a
+message both fires a trigger and triggers a moderation action (e.g. blocklist
+hit), the media reflex still posts — the message is then deleted by
+moderation if applicable, leaving the trigger reply as an orphan reply (which
+Discord renders fine).
+
+### Use case: emoji-mapping vs triggers
+
+These two systems both react to user messages but serve different needs:
+
+| | `react` (emoji) | Triggers (media) |
+|---|---|---|
+| Choice | LLM decides | Deterministic pattern match |
+| Cost | Costs an LLM call | Zero |
+| Output | Emoji on user's message | Full media post |
+| Best for | Vibe-aware reactions | Catchphrase memes, predictable gags |
+
+Use both. The LLM handles the contextual emoji "tap"; triggers handle the
+"the bot must post X whenever Y is said" rule.
+
+---
+
 ## 12. Rate limiting and anti-spam
 
 ### Message volume spam
@@ -1138,6 +1270,13 @@ expressions:
   allow_attachments: true      # may post images/videos/GIFs from the pool
   prompt_limit: 30             # max items of each category per turn (3..100)
   max_reactions_per_message: 3 # safety cap (1..20)
+
+# ── Message triggers (deterministic, zero LLM cost) ──────────────────
+# Mapping file: config/triggers.json. Patterns → media-pool keys.
+# Hot-reloadable via !triggers reload.
+triggers:
+  enabled: true                # master switch
+  max_per_message: 1           # cap per message (1..5)
 
 # ── Allowed LLM actions ──────────────────────────────────────────────
 # Kick and ban are intentionally absent — the LLM can never execute them.
