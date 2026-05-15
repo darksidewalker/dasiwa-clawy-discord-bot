@@ -271,8 +271,9 @@ async def fire_trigger(
     media_key = random.choice(trigger.media)
     entry = EXPRESSIONS.media_entry(media_key)
     if entry is None:
-        log.debug(
-            "trigger %r references missing media key %r — skipping",
+        log.info(
+            "trigger %r matched but references missing media key %r — "
+            "check that the key exists in media_pool.json",
             trigger.name, media_key,
         )
         return False
@@ -290,6 +291,11 @@ async def fire_trigger(
     if media_type == "sticker":
         sid = entry.get("sticker_id")
         if guild is None or not sid:
+            log.info(
+                "trigger %r matched but sticker entry %r has no sticker_id "
+                "(or no guild context)",
+                trigger.name, media_key,
+            )
             return False
         try:
             sid_int = int(sid)
@@ -298,14 +304,22 @@ async def fire_trigger(
             return False
         sticker = discord.utils.get(guild.stickers, id=sid_int)
         if sticker is None:
-            log.debug("trigger %r: sticker %s not in guild", trigger.name, sid_int)
+            log.info(
+                "trigger %r matched but sticker id %s not found in guild — "
+                "is the sticker still on the server?",
+                trigger.name, sid_int,
+            )
             return False
         send_kwargs["stickers"] = [sticker]
 
     elif media_type in {"file", "url"}:
         file_obj = await _build_attach_file(entry)
         if file_obj is None:
-            log.debug("trigger %r: media %r failed to build", trigger.name, media_key)
+            log.info(
+                "trigger %r matched but media %r failed to load — "
+                "check file path or URL in media_pool.json",
+                trigger.name, media_key,
+            )
             return False
         send_kwargs["file"] = file_obj
 

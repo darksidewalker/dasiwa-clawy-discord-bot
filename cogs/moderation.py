@@ -169,9 +169,11 @@ class ModerationCog(commands.Cog):
                         fired_names.add(trig.name)  # don't retry the same one
                     remaining -= 1
                 if fired:
-                    log.debug(
-                        "fired %d trigger(s) on message %s in #%s",
-                        fired, message.id, getattr(message.channel, "name", "?"),
+                    log.info(
+                        "fired %d trigger(s) on message %s in #%s by %s",
+                        fired, message.id,
+                        getattr(message.channel, "name", "?"),
+                        message.author.display_name,
                     )
 
         # ========== OWNER SHORTCUT ==========
