@@ -145,6 +145,13 @@ class ModerationCog(commands.Cog):
         # share the same "is Clawy allowed to speak here?" semantics.
         if CFG.triggers_enabled and CFG.chat_enabled:
             if is_chat_allowed(message.author):
+                log.info(
+                    "trigger eval: text=%r channel=%s author=%s loaded=%d",
+                    message.content[:80],
+                    getattr(message.channel, "name", "?"),
+                    message.author.display_name,
+                    TRIGGERS.count(),
+                )
                 fired = 0
                 # Cap: usually 1, but configurable in case you want multiple.
                 # We loop with a temporary skip-set so we don't fire the same
@@ -158,7 +165,9 @@ class ModerationCog(commands.Cog):
                         text, message.channel.id, skip=fired_names,
                     )
                     if trig is None:
+                        log.info("trigger eval: no match for text=%r", text[:80])
                         break
+                    log.info("trigger eval: matched %r — firing", trig.name)
                     try:
                         if await fire_trigger(trig, message):
                             TRIGGERS.mark_fired(trig.name, message.channel.id)
@@ -175,6 +184,16 @@ class ModerationCog(commands.Cog):
                         getattr(message.channel, "name", "?"),
                         message.author.display_name,
                     )
+            else:
+                log.info(
+                    "trigger eval skipped: chat not allowed for %s",
+                    message.author.display_name,
+                )
+        else:
+            log.info(
+                "trigger eval skipped: triggers_enabled=%s chat_enabled=%s",
+                CFG.triggers_enabled, CFG.chat_enabled,
+            )
 
         # ========== OWNER SHORTCUT ==========
         # Owner always goes straight to chat with full submission dynamic.
