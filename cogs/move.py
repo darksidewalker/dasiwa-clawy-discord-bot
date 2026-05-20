@@ -69,9 +69,10 @@ async def _download_attachments(
     files: list[discord.File] = []
     for a in atts:
         # Discord caps uploads; skip oversized ones to avoid a noisy failure.
-        # We don't know the destination's boost tier, so be conservative (25 MB).
-        if a.size > 25 * 1024 * 1024:
-            log.info("skipping oversized attachment %s (%.1f MB)", a.filename, a.size / 1024 / 1024)
+        # We use a 100MB cap and let the Discord API return a 413 if the
+        # specific channel's boost tier doesn't support it.
+        if a.size > 100 * 1024 * 1024:
+            log.warning("skipping oversized attachment %s (%.1f MB)", a.filename, a.size / 1024 / 1024)
             continue
         try:
             async with session.get(a.url) as r:
@@ -260,9 +261,20 @@ class MoveCog(CleanCommandCog):
         failed = 0
         for src in messages:
             files = await _download_attachments(self._http, src.attachments)
+
+            # Safety check: If the message had attachments but we failed to fetch
+            # all of them (e.g. they were too large or download failed), abort
+            # moving this specific message to avoid data loss.
+            if src.attachments and len(files) < len(src.attachments):
+                log.warning("Move aborted for message %s: media too large or fetch failed.", src.id)
+                for f in files: f.close()
+                failed += 1
+                continue
+
             ok = await _repost_via_webhook(webhook, author, src.content or "", files)
             if not ok:
                 failed += 1
+                for f in files: f.close()
                 continue
             try:
                 await src.delete()
