@@ -158,6 +158,19 @@ async def prefilter(message: discord.Message, bot_user_id: int) -> tuple[str, An
                 },
             )
 
+    # 4b. Basic Jailbreak/Injection Heuristic
+    if _is_jailbreak_attempt(message.content) and not is_protected:
+        log.info("Prefilter: detected suspicious instruction pattern from %s", message.author)
+        return (
+            "action",
+            {
+                "action": "ignore", # Or "warn" if you want to be aggressive
+                "reason": "suspicious prompt pattern detected",
+                "source": "prefilter:jailbreak_heuristic",
+                "react": ["🚫"]
+            },
+        )
+
     # 5. Spam detection: record this message, then check the rate
     SPAM.record(message.author.id)
     if SPAM.is_spamming(message.author.id) and not is_protected:

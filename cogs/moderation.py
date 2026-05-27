@@ -321,6 +321,13 @@ class ModerationCog(commands.Cog):
         # (warn / delete / timeout / role / ignore) remain available so we
         # can still moderate non-allowed users normally.
         author_allowed = is_chat_allowed(message.author)
+        
+        # ANTI-JAILBREAK: If the user is not allowed to chat, we treat a mention
+        # as "noise" rather than a direct command. This prevents non-allowed
+        # users from triggering the moderation LLM just by mentioning the bot
+        # with a prompt injection.
+        effective_mention = was_mentioned and author_allowed
+
         is_nsfw_channel = message.channel.name in CFG.nsfw_channels
         if is_nsfw_channel:
             # NSFW channels: LLM may only chat or stay silent. Never moderate.
@@ -333,7 +340,7 @@ class ModerationCog(commands.Cog):
 
         # Throttle: don't ask the LLM about every benign message.
         # If not mentioned, skip unless the content looks noteworthy OR the dice say so.
-        if not was_mentioned:
+        if not effective_mention:
             # Proactive replies honor the same chat gates: quiet hours and
             # role allowlist. A directly-addressed message already passed the
             # gates further up in on_message, but proactive does not.
@@ -382,13 +389,14 @@ class ModerationCog(commands.Cog):
             f"Flags: "
             f"{owner_flag}"
             f"{channel_type_flag}"
+            f"{'UNAUTHORIZED_INTERACTION_ATTEMPT ' if was_mentioned and not author_allowed else ''}"
             f"{'BOT_WAS_MENTIONED ' if was_mentioned else ''}"
             f"{'AUTHOR_IS_PROTECTED ' if author_roles & set(CFG.protected_roles) else ''}"
             f"{'AUTHOR_IS_NEW_ACCOUNT ' if is_new else ''}"
             f"\n"
             f"Recent chat:\n"
             + ("\n".join(list(self._channel_ctx[message.channel.id])[:-1]) or "(none)")
-            + f"\n\nNew message from {author.display_name}: {message.content[:500]}\n\n"
+            + f"\n\nInput content for evaluation from {author.display_name}:\n<user_input>\n{message.content[:500]}\n</user_input>\n\n"
             f"Respond with the JSON action object."
         )
 
