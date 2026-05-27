@@ -211,31 +211,27 @@ class ModerationCog(commands.Cog):
                              in_quiet_hours(), CFG.chat_enabled)
             return
 
+        # ========== MODERATION PREFILTER ==========
+        mod_decided_reply = False   # so we don't double-reply when mod already spoke
+        decision = "skip"
+        if CFG.moderation_enabled:
+            decision, payload = await prefilter(message, bot_user_id)
+            if decision == "action":
+                # Rule-based action (blocklist, spam) — execute directly, don't ask LLM
+                await execute(payload, message)
+                # a deterministic action replaces chat reply too
+                return
+
         # ========== DIRECT CHAT SHORTCUT ==========
-        # When someone directly addresses the bot (@mention or name) AND they
-        # are in the chat allowlist, skip the moderation LLM and go straight
-        # to _chat. This avoids a wasted LLM call and eliminates the chance
-        # of moderation returning "ignore" or failing silently.
-        # Moderation (prefilter: spam, caps, mentions, blocklist) still ran above.
+        # Checked after prefilter to ensure safety rules (blocklist, jailbreaks)
+        # are enforced even for @mentions.
         if (was_mentioned or self._addresses_bot(message)) and CFG.chat_enabled:
             if not in_quiet_hours() and is_chat_allowed(message.author):
                 await self._chat(message)
                 return
 
-        # ========== MODERATION PATH ==========
-        mod_decided_reply = False   # so we don't double-reply when mod already spoke
-        if CFG.moderation_enabled:
-            decision, payload = await prefilter(message, bot_user_id)
-            if decision == "skip":
-                # Prefilter told us not to run mod. Fall through to chat (if enabled).
-                pass
-            elif decision == "action":
-                # Rule-based action (blocklist, spam) — execute directly, don't ask LLM
-                await execute(payload, message)
-                # a deterministic action replaces chat reply too
-                return
-            else:
-                # decision == "llm"
+        # ========== MODERATION LLM PATH ==========
+        if CFG.moderation_enabled and decision == "llm":
                 # NSFW channels: skip the moderation LLM entirely.
                 # Small models (3B-class) can't reliably distinguish "explicit RP
                 # welcome here" from "actual abuse", so they over-warn or
