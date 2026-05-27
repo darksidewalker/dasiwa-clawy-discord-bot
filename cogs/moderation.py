@@ -82,6 +82,23 @@ class ModerationCog(commands.Cog):
         bot_user_id = self.bot.user.id if self.bot.user else 0
         was_mentioned = bot_user_id in [u.id for u in message.mentions]
 
+        # ========== OWNER SHORTCUT ==========
+        # Owner always goes straight to chat with full submission dynamic.
+        # Never run through moderation LLM — they are untouchable and above judgment.
+        # This check is placed early to exempt the owner from rate limits and moderation.
+        if message.author.id == CFG.owner_id:
+            addressed = was_mentioned or self._addresses_bot(message)
+            log.info("owner detected: %s | mentioned=%s | addresses_bot=%s | addressed=%s | chat_enabled=%s",
+                     message.author.display_name, was_mentioned, self._addresses_bot(message),
+                     addressed, CFG.chat_enabled)
+            if addressed:
+                if not in_quiet_hours() and CFG.chat_enabled:
+                    await self._chat(message)
+                else:
+                    log.info("owner shortcut blocked: quiet=%s chat_enabled=%s",
+                             in_quiet_hours(), CFG.chat_enabled)
+            return
+
         # ========== MENTION RATE LIMIT ==========
         # Checked before anything else — applies regardless of mode.
         if was_mentioned and not CFG.state.paused:
