@@ -49,16 +49,21 @@ def _is_admin(ctx: commands.Context) -> bool:
     return False
 
 
-async def _get_or_create_webhook(channel: discord.TextChannel) -> discord.Webhook | None:
+async def _get_or_create_webhook(channel: discord.TextChannel | discord.Thread) -> discord.Webhook | None:
+    # Threads don't have webhooks; they use webhooks from their parent TextChannel or ForumChannel.
+    target = channel.parent if isinstance(channel, discord.Thread) else channel
+    if not isinstance(target, (discord.TextChannel, discord.ForumChannel)):
+        return None
+
     try:
-        hooks = await channel.webhooks()
+        hooks = await target.webhooks()
     except discord.Forbidden:
         return None
     for h in hooks:
         if h.name == WEBHOOK_NAME and h.token:
             return h
     try:
-        return await channel.create_webhook(name=WEBHOOK_NAME, reason="message-mover")
+        return await target.create_webhook(name=WEBHOOK_NAME, reason="message-mover")
     except discord.Forbidden:
         return None
 
@@ -92,16 +97,18 @@ async def _repost_via_webhook(
     author: discord.abc.User,
     content: str,
     files: list[discord.File],
+    thread: discord.Thread | None = None,
 ) -> bool:
     avatar_url = author.display_avatar.url if author.display_avatar else None
     username = (author.display_name or "user")[:80]
     try:
         await webhook.send(
-            content=content or "\u200b",   # zero-width space if only attachments
+            content=content or "\u200b",  # zero-width space if only attachments
             username=username,
             avatar_url=avatar_url,
             files=files,
             allowed_mentions=discord.AllowedMentions.none(),  # don't re-ping people
+            thread=thread,
         )
         return True
     except discord.DiscordException as e:
@@ -143,7 +150,7 @@ class MoveCog(CleanCommandCog):
     async def moveto(
         self,
         ctx: commands.Context,
-        dest: discord.TextChannel | None = None,
+        dest: discord.abc.GuildChannel | None = None,
         follow_count: int = 0,
     ) -> None:
         """Reply to a message with '!moveto #channel [N]'.
@@ -156,7 +163,7 @@ class MoveCog(CleanCommandCog):
         if ctx.message.reference is None or ctx.message.reference.message_id is None:
             await ack(ctx, "You need to **reply** to the message you want to move.")
             return
-        if not isinstance(ctx.channel, discord.TextChannel):
+        if not isinstance(ctx.channel, (discord.TextChannel, discord.Thread)):
             await ack(ctx, "This command only works in text channels.")
             return
         if dest.id == ctx.channel.id:
@@ -191,7 +198,7 @@ class MoveCog(CleanCommandCog):
         ctx: commands.Context,
         member: discord.Member | None = None,
         n: int = 1,
-        dest: discord.TextChannel | None = None,
+        dest: discord.abc.GuildChannel | None = None,
     ) -> None:
         """Move the last N messages from @user in this channel to #channel."""
         if member is None or dest is None:
@@ -228,7 +235,7 @@ class MoveCog(CleanCommandCog):
         self,
         ctx: commands.Context,
         messages: list[discord.Message],
-        dest: discord.TextChannel,
+        dest: discord.abc.GuildChannel,
         author: discord.abc.User,
     ) -> None:
         if not messages:
@@ -257,6 +264,8 @@ class MoveCog(CleanCommandCog):
         if self._http is None or self._http.closed:
             self._http = aiohttp.ClientSession()
 
+        thread = dest if isinstance(dest, discord.Thread) else None
+
         moved = 0
         failed = 0
         for src in messages:
@@ -271,7 +280,7 @@ class MoveCog(CleanCommandCog):
                 failed += 1
                 continue
 
-            ok = await _repost_via_webhook(webhook, author, src.content or "", files)
+            ok = await _repost_via_webhook(webhook, author, src.content or "", files, thread=thread)
             if not ok:
                 failed += 1
                 for f in files: f.close()
