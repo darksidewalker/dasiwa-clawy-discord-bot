@@ -229,8 +229,15 @@ class ModerationCog(commands.Cog):
             if not in_quiet_hours() and is_chat_allowed(message.author):
                 await self._chat(message)
                 return
-            elif not is_chat_allowed(message.author):
-                log.info("Direct chat skipped: %s not in allowlist", message.author.display_name)
+
+            if not is_chat_allowed(message.author):
+                author_roles = [r.name for r in getattr(message.author, "roles", [])]
+                log.info("Direct chat skipped: %s not in allowlist. Roles detected: %s", 
+                         message.author.display_name, author_roles)
+                return # Silence for non-allowed users
+            elif in_quiet_hours():
+                log.info("Direct chat skipped: quiet hours active.")
+                return
 
         # ========== MODERATION LLM PATH ==========
         if CFG.moderation_enabled and decision == "llm":

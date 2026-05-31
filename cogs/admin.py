@@ -750,16 +750,23 @@ class AdminCog(CleanCommandCog):
             return
         info = await STORE.get_user(member.id)
         if not info:
-            await ack(ctx, f"No record of **{member.display_name}** yet.")
-            return
-        first = time.strftime("%Y-%m-%d", time.localtime(info["first_seen"]))
-        last = time.strftime("%Y-%m-%d %H:%M", time.localtime(info["last_seen"]))
+            first = last = "Never"
+            msg_count = 0
+            notes = "(none)"
+        else:
+            first = time.strftime("%Y-%m-%d", time.localtime(info["first_seen"]))
+            last = time.strftime("%Y-%m-%d %H:%M", time.localtime(info["last_seen"]))
+            msg_count = info['msg_count']
+            notes = info['notes'] or "(none)"
+
+        roles = [r.name for r in member.roles]
         await reply_permanent(ctx,
-            f"**{info['display_name']}**\n"
+            f"**{member.display_name}** (`{member.id}`)\n"
             f"• First seen: {first}\n"
             f"• Last seen: {last}\n"
-            f"• Messages observed: {info['msg_count']}\n"
-            f"• Notes: {info['notes'] or '(none)'}"
+            f"• Messages observed: {msg_count}\n"
+            f"• Roles detected: {', '.join(roles) if roles else 'None'}\n"
+            f"• Notes: {notes}"
         )
 
     # ---------- chat memory controls ----------
