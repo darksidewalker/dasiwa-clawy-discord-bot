@@ -151,7 +151,7 @@ class MoveCog(CleanCommandCog):
     async def moveto(
         self,
         ctx: commands.Context,
-        dest: discord.TextChannel | discord.Thread | None = None,
+        dest: discord.abc.GuildChannel | None = None,
         follow_count: int = 0,
     ) -> None:
         """Reply to a message with '!moveto #channel [N]'.
@@ -203,7 +203,7 @@ class MoveCog(CleanCommandCog):
         ctx: commands.Context,
         member: discord.Member | None = None,
         n: int = 1,
-        dest: discord.TextChannel | discord.Thread | None = None,
+        dest: discord.abc.GuildChannel | None = None,
     ) -> None:
         """Move the last N messages from @user in this channel to #channel."""
         if member is None or dest is None:
