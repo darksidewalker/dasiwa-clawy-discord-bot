@@ -146,6 +146,7 @@ class MoveCog(CleanCommandCog):
     # =====================================================
     # !moveto #channel [N]
     # =====================================================
+    @commands.guild_only()
     @commands.command(name="moveto")
     async def moveto(
         self,
@@ -192,6 +193,7 @@ class MoveCog(CleanCommandCog):
     # =====================================================
     # !movelast @user N [#channel]
     # =====================================================
+    @commands.guild_only()
     @commands.command(name="movelast")
     async def movelast(
         self,
@@ -238,12 +240,12 @@ class MoveCog(CleanCommandCog):
         dest: discord.abc.GuildChannel,
         author: discord.abc.User,
     ) -> None:
-        if not messages:
-            await ack(ctx, "Nothing to move.")
+        if not messages or not dest or not author:
+            await ack(ctx, "Nothing to move or missing information.")
             return
 
         # Permission sanity checks
-        me = ctx.guild.me if ctx.guild else None
+        me = ctx.guild.me
         if me is None:
             await ack(ctx, "No guild context.")
             return
