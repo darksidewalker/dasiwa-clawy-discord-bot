@@ -151,7 +151,7 @@ class MoveCog(CleanCommandCog):
     async def moveto(
         self,
         ctx: commands.Context,
-        dest: discord.abc.GuildChannel | None = None,
+        dest: discord.TextChannel | discord.Thread | None = None,
         follow_count: int = 0,
     ) -> None:
         """Reply to a message with '!moveto #channel [N]'.
@@ -160,6 +160,9 @@ class MoveCog(CleanCommandCog):
         """
         if dest is None:
             await ack(ctx, "Usage: reply to a message, then: `!moveto #channel [N]`")
+            return
+        if not isinstance(dest, (discord.TextChannel, discord.Thread)):
+            await ack(ctx, "Destination must be a text channel or thread.")
             return
         if ctx.message.reference is None or ctx.message.reference.message_id is None:
             await ack(ctx, "You need to **reply** to the message you want to move.")
@@ -200,11 +203,14 @@ class MoveCog(CleanCommandCog):
         ctx: commands.Context,
         member: discord.Member | None = None,
         n: int = 1,
-        dest: discord.abc.GuildChannel | None = None,
+        dest: discord.TextChannel | discord.Thread | None = None,
     ) -> None:
         """Move the last N messages from @user in this channel to #channel."""
         if member is None or dest is None:
             await ack(ctx, "Usage: `!movelast @user N #channel`")
+            return
+        if not isinstance(dest, (discord.TextChannel, discord.Thread)):
+            await ack(ctx, "Destination must be a text channel or thread.")
             return
         if not isinstance(ctx.channel, discord.TextChannel):
             await ack(ctx, "This command only works in text channels.")
@@ -237,11 +243,14 @@ class MoveCog(CleanCommandCog):
         self,
         ctx: commands.Context,
         messages: list[discord.Message],
-        dest: discord.abc.GuildChannel,
+        dest: discord.TextChannel | discord.Thread,
         author: discord.abc.User,
     ) -> None:
-        if not messages or not dest or not author:
+        if not messages or not author:
             await ack(ctx, "Nothing to move or missing information.")
+            return
+        if not isinstance(dest, (discord.TextChannel, discord.Thread)):
+            await ack(ctx, "Destination must be a text channel or thread.")
             return
 
         # Permission sanity checks
