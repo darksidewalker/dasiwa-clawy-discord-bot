@@ -215,7 +215,15 @@ class ModerationCog(commands.Cog):
         mod_decided_reply = False   # so we don't double-reply when mod already spoke
         decision = "skip"
         if CFG.moderation_enabled:
-            decision, payload = await prefilter(message, bot_user_id)
+            try:
+                decision, payload = await prefilter(message, bot_user_id)
+            except NameError as e:
+                log.error("Prefilter failed (missing function in core/prefilter.py): %s", e)
+                decision = "skip"
+            except Exception as e:
+                log.error("Unexpected error in prefilter: %s", e)
+                decision = "skip"
+
             if decision == "action":
                 # Rule-based action (blocklist, spam) — execute directly, don't ask LLM
                 await execute(payload, message)
@@ -232,8 +240,8 @@ class ModerationCog(commands.Cog):
 
             if not is_chat_allowed(message.author):
                 author_roles = [r.name for r in getattr(message.author, "roles", [])]
-                log.info("Direct chat skipped: %s not in allowlist. Roles detected: %s", 
-                         message.author.display_name, author_roles)
+                log.info("Direct chat skipped: %s not in allowlist. Roles detected: %s. Allowed list: %s", 
+                         message.author.display_name, author_roles, CFG.chat_allowed_roles)
                 return # Silence for non-allowed users
             elif in_quiet_hours():
                 log.info("Direct chat skipped: quiet hours active.")

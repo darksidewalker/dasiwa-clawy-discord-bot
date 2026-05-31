@@ -155,6 +155,7 @@ chat:
   # Role names are case-sensitive — they must match Discord exactly.
   allowed_roles:
     - "Member"
+    - "Inner Circle"
 
 
   # Quiet hours — scheduled silence for the chat pipeline.

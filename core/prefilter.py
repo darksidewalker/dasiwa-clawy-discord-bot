@@ -118,6 +118,21 @@ if _blocklist_enabled():
 
 # ── Main prefilter ───────────────────────────────────────────────────
 
+def _is_jailbreak_attempt(content: str) -> bool:
+    """Simple heuristic to catch common prompt injection/jailbreak attempts."""
+    needles = [
+        "ignore previous instructions",
+        "ignore all previous",
+        "disregard all prior",
+        "forget your persona",
+        "new instructions:",
+        "system prompt:",
+        "stop your current task"
+    ]
+    lowered = content.lower()
+    return any(n in lowered for n in needles)
+
+
 async def prefilter(message: discord.Message, bot_user_id: int) -> tuple[str, Any]:
     # 0. Ignore DMs and bots (including self)
     if message.author.bot:
