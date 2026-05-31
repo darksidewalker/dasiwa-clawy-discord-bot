@@ -125,9 +125,8 @@ class ModerationCog(commands.Cog):
                 )
                 return  # Don't process this message further
             elif verdict == "timeout":
-                import datetime as _dt
                 dur = MENTION_RL.timeout_duration()
-                until = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=dur)
+                until = datetime.now(timezone.utc) + timedelta(seconds=dur)
                 if isinstance(message.author, discord.Member):
                     try:
                         await message.author.timeout(
@@ -207,26 +206,10 @@ class ModerationCog(commands.Cog):
                     message.author.display_name,
                 )
         else:
-            log.info(
+            log.debug(
                 "trigger eval skipped: triggers_enabled=%s chat_enabled=%s",
                 CFG.triggers_enabled, CFG.chat_enabled,
             )
-
-        # ========== OWNER SHORTCUT ==========
-        # Owner always goes straight to chat with full submission dynamic.
-        # Never run through moderation LLM — they are untouchable and above judgment.
-        if message.author.id == CFG.owner_id:
-            addressed = was_mentioned or self._addresses_bot(message)
-            log.info("owner detected: %s | mentioned=%s | addresses_bot=%s | addressed=%s | chat_enabled=%s",
-                     message.author.display_name, was_mentioned, self._addresses_bot(message),
-                     addressed, CFG.chat_enabled)
-            if addressed:
-                if not in_quiet_hours() and CFG.chat_enabled:
-                    await self._chat(message)
-                else:
-                    log.info("owner shortcut blocked: quiet=%s chat_enabled=%s",
-                             in_quiet_hours(), CFG.chat_enabled)
-            return
 
         # ========== MODERATION PREFILTER ==========
         mod_decided_reply = False   # so we don't double-reply when mod already spoke
@@ -246,6 +229,8 @@ class ModerationCog(commands.Cog):
             if not in_quiet_hours() and is_chat_allowed(message.author):
                 await self._chat(message)
                 return
+            elif not is_chat_allowed(message.author):
+                log.info("Direct chat skipped: %s not in allowlist", message.author.display_name)
 
         # ========== MODERATION LLM PATH ==========
         if CFG.moderation_enabled and decision == "llm":
