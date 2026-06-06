@@ -69,6 +69,23 @@ def _webhook_parent(channel: MoveDestination) -> WebhookParent | None:
     return None
 
 
+def _belongs_to_guild(
+    channel: discord.TextChannel | discord.Thread,
+    guild: discord.Guild,
+) -> bool:
+    channel_guild = getattr(channel, "guild", None)
+    if channel_guild is not None:
+        return channel_guild.id == guild.id
+
+    parent = getattr(channel, "parent", None)
+    parent_guild = getattr(parent, "guild", None)
+    if parent_guild is not None:
+        return parent_guild.id == guild.id
+
+    parent_id = getattr(channel, "parent_id", None)
+    return parent_id is not None and guild.get_channel(parent_id) is not None
+
+
 class MoveDestinationConverter(commands.Converter[MoveDestination]):
     """Resolve text-channel and thread destinations, including forum posts."""
 
@@ -94,7 +111,7 @@ class MoveDestinationConverter(commands.Converter[MoveDestination]):
                     fetched = None
                 if (
                     isinstance(fetched, (discord.TextChannel, discord.Thread))
-                    and fetched.guild.id == ctx.guild.id
+                    and _belongs_to_guild(fetched, ctx.guild)
                 ):
                     found = fetched
 
@@ -313,6 +330,10 @@ class MoveCog(CleanCommandCog):
             return
 
         # Permission sanity checks
+        if ctx.guild is None:
+            await ack(ctx, "This command only works in a server.")
+            return
+
         me = ctx.guild.me
         if me is None:
             await ack(ctx, "No guild context.")
