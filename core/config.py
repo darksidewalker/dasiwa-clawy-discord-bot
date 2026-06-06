@@ -136,6 +136,22 @@ class Config:
     def chat_context_turns(self) -> int:
         return int(self.raw.get("database", {}).get("chat_context_turns", 8))
 
+    @property
+    def chat_summary_enabled(self) -> bool:
+        return bool(self.raw.get("database", {}).get("chat_summary_enabled", True))
+
+    @property
+    def chat_summary_keep_recent_turns(self) -> int:
+        return int(self.raw.get("database", {}).get("chat_summary_keep_recent_turns", 12))
+
+    @property
+    def chat_summary_batch_turns(self) -> int:
+        return int(self.raw.get("database", {}).get("chat_summary_batch_turns", 24))
+
+    @property
+    def chat_summary_max_chars(self) -> int:
+        return int(self.raw.get("database", {}).get("chat_summary_max_chars", 1400))
+
     # ---- ollama ----
     @property
     def model(self) -> str:

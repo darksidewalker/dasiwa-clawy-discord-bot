@@ -20,6 +20,10 @@ database:
   path: "data/bot.db"          # SQLite file (WAL mode)
   chat_keep_last_turns: 50     # per-user memory size for chat
   chat_context_turns: 5        # how many past turns to feed the LLM when chatting
+  chat_summary_enabled: true   # compress older chat turns into chat_notes
+  chat_summary_keep_recent_turns: 12  # raw turns never summarized/pruned first
+  chat_summary_batch_turns: 24 # older turns compressed per summarization pass
+  chat_summary_max_chars: 1400 # max chars of older memory handed to chat LLM
 
 # Roles the bot must never touch (kick/ban/timeout/role-change).
 protected_roles:

@@ -211,7 +211,7 @@ Session overrides for both live in `RuntimeState` and are mutated by the
 
 **Chat tables:**
 - `chat_turns` — Per-user rolling conversation history (role: user/assistant, content, ts)
-- `chat_notes` — Reserved for future long-term summaries (unused currently)
+- `chat_notes` — Per-user rolling summaries of older chat memory
 
 **Activity tables:**
 - `activity_log` — Raw message events (user_id, channel_id, guild_id, ts)
@@ -234,6 +234,10 @@ database:
   path: "data/bot.db"
   chat_keep_last_turns: 50
   chat_context_turns: 8
+  chat_summary_enabled: true
+  chat_summary_keep_recent_turns: 12
+  chat_summary_batch_turns: 24
+  chat_summary_max_chars: 1400
 
 protected_roles:     # Never punished by the bot
   - "Admin"

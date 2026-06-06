@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS chat_turns (
     content    TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chat_user_ts ON chat_turns(user_id, ts);
+CREATE INDEX IF NOT EXISTS idx_chat_user_id ON chat_turns(user_id, id);
 
 -- Distilled per-user notes the bot builds up over time (optional future use)
 CREATE TABLE IF NOT EXISTS chat_notes (
@@ -159,6 +160,12 @@ class Store:
                 )
             except Exception:
                 pass  # column already exists — that's fine
+            try:
+                self._conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_chat_user_id ON chat_turns(user_id, id)"
+                )
+            except Exception:
+                pass
         await asyncio.to_thread(_do)
         log.info("SQLite store ready at %s", self.path)
 
@@ -325,11 +332,71 @@ class Store:
 
     async def recent_chat_turns(self, user_id: int, limit: int = 12) -> list[dict]:
         rows = await self._fetchall(
-            "SELECT role, content, ts FROM chat_turns WHERE user_id = ? ORDER BY ts DESC LIMIT ?",
+            "SELECT id, role, content, ts, channel_id FROM chat_turns WHERE user_id = ? ORDER BY ts DESC LIMIT ?",
             (user_id, limit),
         )
         # reverse so it's chronological
         return list(reversed([dict(r) for r in rows]))
+
+    async def chat_turn_count(self, user_id: int) -> int:
+        row = await self._fetchone(
+            "SELECT COUNT(*) AS n FROM chat_turns WHERE user_id = ?",
+            (user_id,),
+        )
+        return int(row["n"]) if row else 0
+
+    async def older_chat_turns(
+        self,
+        user_id: int,
+        *,
+        keep_recent: int,
+        limit: int,
+    ) -> list[dict]:
+        """Return older turns, excluding the newest keep_recent turns."""
+        rows = await self._fetchall(
+            """
+            SELECT id, role, content, ts, channel_id FROM chat_turns
+            WHERE user_id = ?
+              AND id NOT IN (
+                SELECT id FROM chat_turns
+                WHERE user_id = ?
+                ORDER BY ts DESC, id DESC
+                LIMIT ?
+              )
+            ORDER BY ts ASC, id ASC
+            LIMIT ?
+            """,
+            (user_id, user_id, keep_recent, limit),
+        )
+        return [dict(r) for r in rows]
+
+    async def delete_chat_turn_ids(self, ids: list[int]) -> None:
+        if not ids:
+            return
+        placeholders = ",".join("?" for _ in ids)
+        await self._exec(
+            f"DELETE FROM chat_turns WHERE id IN ({placeholders})",
+            tuple(ids),
+        )
+
+    async def get_chat_summary(self, user_id: int) -> dict | None:
+        row = await self._fetchone(
+            "SELECT summary, updated_at FROM chat_notes WHERE user_id = ?",
+            (user_id,),
+        )
+        return dict(row) if row else None
+
+    async def upsert_chat_summary(self, user_id: int, summary: str) -> None:
+        await self._exec(
+            """
+            INSERT INTO chat_notes (user_id, summary, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                summary = excluded.summary,
+                updated_at = excluded.updated_at
+            """,
+            (user_id, summary, int(time.time())),
+        )
 
     async def prune_chat_turns(self, user_id: int, keep_last: int = 50) -> None:
         """Keep only the most recent N turns per user."""

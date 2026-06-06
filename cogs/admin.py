@@ -785,11 +785,17 @@ class AdminCog(CleanCommandCog):
         if member is None:
             await ack(ctx, "Usage: `!recall @user`")
             return
+        summary = await STORE.get_chat_summary(member.id)
         turns = await STORE.recent_chat_turns(member.id, limit=10)
-        if not turns:
+        if not turns and not summary:
             await ack(ctx, f"No chat memory for **{member.display_name}**.")
             return
-        lines = [f"**Chat memory with {member.display_name}** (most recent {len(turns)}):"]
+        lines = [f"**Chat memory with {member.display_name}**"]
+        if summary and summary.get("summary"):
+            ts = time.strftime("%m-%d %H:%M", time.localtime(summary["updated_at"]))
+            lines.append(f"`[summary updated {ts}]` {summary['summary'][:650]}")
+        if turns:
+            lines.append(f"**Recent raw turns** (most recent {len(turns)}):")
         for t in turns:
             ts = time.strftime("%m-%d %H:%M", time.localtime(t["ts"]))
             lines.append(f"`[{ts}] {t['role']}:` {t['content'][:150]}")

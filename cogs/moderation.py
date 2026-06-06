@@ -21,6 +21,11 @@ import discord
 from discord.ext import commands
 
 from core.config import CFG
+from core.chat_memory import (
+    build_chat_memory_packet,
+    normalize_message_text,
+    summarize_old_chat_turns,
+)
 from core.executor import execute
 from core.expressions import send_with_extras
 from core.gating import in_quiet_hours, is_chat_allowed
@@ -69,7 +74,7 @@ class ModerationCog(commands.Cog):
 
         # Rolling channel context (short-term, in-memory)
         self._channel_ctx[message.channel.id].append(
-            f"{message.author.display_name}: {message.content[:120]}"
+            f"{message.author.display_name}: {normalize_message_text(message.content, limit=180)}"
         )
 
         if CFG.state.paused:
@@ -454,12 +459,10 @@ class ModerationCog(commands.Cog):
             channel_name=message.channel.name,
         )
 
-        # Pull this user's recent chat turns from DB
-        past = await STORE.recent_chat_turns(
-            message.author.id, limit=CFG.chat_context_turns
+        memory_packet = await build_chat_memory_packet(
+            message.author.id,
+            recent_limit=CFG.chat_context_turns,
         )
-        history_lines = [f"{t['role']}: {t['content'][:200]}" for t in past]
-        history_str = "\n".join(history_lines) if history_lines else "(no prior conversation)"
 
         # Get user context from the database (join date, activity level, notes)
         user_context = await STORE.get_user_context(message.author.id)
@@ -473,10 +476,13 @@ class ModerationCog(commands.Cog):
         )
 
         user_prompt = (
-            f"Recent conversation with {message.author.display_name}:{context_line}\n"
-            f"{history_str}\n\n"
+            f"Memory for {message.author.display_name}:{context_line}\n"
+            f"{memory_packet}\n\n"
             f"What the channel is currently discussing:\n{channel_ctx_str}\n\n"
-            f"New message from {message.author.display_name}: {message.content[:800]}\n\n"
+            f"New message from {message.author.display_name}: "
+            f"{normalize_message_text(message.content, limit=800)}\n\n"
+            f"Use recent raw turns and the new message as highest priority. "
+            f"Use older summarized memory only when it is clearly relevant; ignore it if stale or conflicting.\n\n"
             f"Output ONLY this JSON object, nothing else:\n{{\"message\": \"your reply here\"}}"
         )
 
@@ -516,22 +522,33 @@ class ModerationCog(commands.Cog):
 
         # Store BOTH turns in chat memory — keep the LLM grounded on context
         try:
+            stored_user_text = normalize_message_text(message.content, limit=1000)
             await STORE.add_chat_turn(
-                message.author.id, message.channel.id, "user", message.content[:1000]
+                message.author.id, message.channel.id, "user", stored_user_text
             )
             await STORE.add_chat_turn(
                 message.author.id, message.channel.id, "assistant", text[:1000]
             )
-            # Prune so memory doesn't grow without bound
-            await STORE.prune_chat_turns(
-                message.author.id, keep_last=CFG.chat_keep_last_turns
-            )
+            asyncio.create_task(self._summarize_chat_memory(message.author.id))
         except Exception as e:
             log.warning("chat memory write failed: %s", e)
 
     # ================================================================
     # HELPERS
     # ================================================================
+    async def _summarize_chat_memory(self, user_id: int) -> None:
+        try:
+            keep_last = max(CFG.chat_keep_last_turns, CFG.chat_summary_keep_recent_turns)
+            for _ in range(4):
+                compressed = await summarize_old_chat_turns(user_id)
+                if not compressed:
+                    break
+            remaining = await STORE.chat_turn_count(user_id)
+            if (not CFG.chat_summary_enabled) or remaining <= keep_last + CFG.chat_summary_batch_turns:
+                await STORE.prune_chat_turns(user_id, keep_last=keep_last)
+        except Exception as e:
+            log.warning("chat summarization failed: %s", e)
+
     def _apply_mood_switch(self, result: dict) -> None:
         """If the LLM included a mood_switch and dynamic_mood is on, apply it."""
         if not CFG.dynamic_mood:

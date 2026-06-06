@@ -1011,11 +1011,13 @@ Moderation memory and chat memory are in separate tables and are never mixed.
 
 | Table        | Content |
 |--------------|---|
-| `chat_turns` | Per-user rolling conversation history. Pruned to `chat_keep_last_turns` (default 50). |
-| `chat_notes` | Reserved for future long-term summaries; currently unused. |
+| `chat_turns` | Per-user recent raw conversation history. Older turns can be compressed before pruning. |
+| `chat_notes` | Per-user rolling summaries of older chat memory. |
 
-The bot feeds the last `chat_context_turns` turns (default 8) into the LLM when
-chatting, so Clawy remembers what was said earlier.
+When chatting, Clawy receives a memory packet: recent raw turns with timestamps,
+an older summary marked as potentially stale, and live channel context. Emoji in
+messages are expanded into short text descriptions before being stored or handed
+to the chat LLM.
 
 ### Activity tables
 
@@ -1197,6 +1199,10 @@ database:
   path: "data/bot.db"          # SQLite file (WAL mode), auto-created
   chat_keep_last_turns: 50     # max stored chat turns per user
   chat_context_turns: 8        # how many past turns fed to the LLM per reply
+  chat_summary_enabled: true   # compress older chat turns into chat_notes
+  chat_summary_keep_recent_turns: 12  # raw turns kept fresh
+  chat_summary_batch_turns: 24 # older turns compressed per pass
+  chat_summary_max_chars: 1400 # summary chars handed to chat LLM
 
 # ── Protected roles (never punished autonomously) ────────────────────
 protected_roles:
