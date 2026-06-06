@@ -552,6 +552,10 @@ Move the last N messages from a user in the current channel:
 !movelast @username 5 #destination-channel
 ```
 
+Destinations can be normal text channels or existing threads/forum posts. For
+a forum destination, mention the specific post/thread rather than the parent
+forum channel.
+
 ### Requirements
 
 - Clawy needs **Manage Webhooks** in the destination channel.

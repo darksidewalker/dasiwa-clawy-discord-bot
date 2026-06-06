@@ -33,11 +33,14 @@ from discord.ext import commands
 from core.config import CFG
 from core.store import STORE
 
-from ._common import CleanCommandCog, ack, reply_permanent
+from ._common import CleanCommandCog, ack
 
 log = logging.getLogger(__name__)
 
 WEBHOOK_NAME = "persona-mover"   # bot-managed webhook name we look for / create
+
+MoveDestination = discord.TextChannel | discord.Thread
+WebhookParent = discord.TextChannel | discord.ForumChannel
 
 
 def _is_admin(ctx: commands.Context) -> bool:
@@ -49,10 +52,72 @@ def _is_admin(ctx: commands.Context) -> bool:
     return False
 
 
-async def _get_or_create_webhook(channel: discord.TextChannel | discord.Thread) -> discord.Webhook | None:
+def _channel_or_thread(
+    guild: discord.Guild,
+    channel_id: int,
+) -> discord.abc.GuildChannel | discord.Thread | None:
+    if hasattr(guild, "get_channel_or_thread"):
+        return guild.get_channel_or_thread(channel_id)
+    return guild.get_channel(channel_id) or guild.get_thread(channel_id)
+
+
+def _webhook_parent(channel: MoveDestination) -> WebhookParent | None:
     # Threads don't have webhooks; they use webhooks from their parent TextChannel or ForumChannel.
     target = channel.parent if isinstance(channel, discord.Thread) else channel
-    if not isinstance(target, (discord.TextChannel, discord.ForumChannel)):
+    if isinstance(target, (discord.TextChannel, discord.ForumChannel)):
+        return target
+    return None
+
+
+class MoveDestinationConverter(commands.Converter[MoveDestination]):
+    """Resolve text-channel and thread destinations, including forum posts."""
+
+    async def convert(self, ctx: commands.Context, argument: str) -> MoveDestination:
+        if ctx.guild is None:
+            raise commands.BadArgument("Move commands only work in a server.")
+
+        arg = argument.strip()
+        channel_id: int | None = None
+        if arg.startswith("<#") and arg.endswith(">"):
+            raw_id = arg[2:-1]
+            if raw_id.isdigit():
+                channel_id = int(raw_id)
+        elif arg.isdigit():
+            channel_id = int(arg)
+
+        if channel_id is not None:
+            found = _channel_or_thread(ctx.guild, channel_id)
+            if found is None:
+                try:
+                    fetched = await ctx.bot.fetch_channel(channel_id)
+                except discord.DiscordException:
+                    fetched = None
+                if (
+                    isinstance(fetched, (discord.TextChannel, discord.Thread))
+                    and fetched.guild.id == ctx.guild.id
+                ):
+                    found = fetched
+
+            if isinstance(found, (discord.TextChannel, discord.Thread)):
+                return found
+            if isinstance(found, discord.ForumChannel):
+                raise commands.BadArgument("Mention a specific forum thread, not the forum channel.")
+            raise commands.BadArgument("Destination must be a text channel or thread.")
+
+        lowered = arg[1:].casefold() if arg.startswith("#") else arg.casefold()
+        for channel in ctx.guild.text_channels:
+            if channel.name.casefold() == lowered:
+                return channel
+        for thread in ctx.guild.threads:
+            if thread.name.casefold() == lowered:
+                return thread
+
+        raise commands.BadArgument("Destination must be a text channel or thread.")
+
+
+async def _get_or_create_webhook(channel: MoveDestination) -> discord.Webhook | None:
+    target = _webhook_parent(channel)
+    if target is None:
         return None
 
     try:
@@ -151,7 +216,7 @@ class MoveCog(CleanCommandCog):
     async def moveto(
         self,
         ctx: commands.Context,
-        dest: discord.abc.GuildChannel | None = None,
+        dest: MoveDestinationConverter = None,
         follow_count: int = 0,
     ) -> None:
         """Reply to a message with '!moveto #channel [N]'.
@@ -160,9 +225,6 @@ class MoveCog(CleanCommandCog):
         """
         if dest is None:
             await ack(ctx, "Usage: reply to a message, then: `!moveto #channel [N]`")
-            return
-        if not isinstance(dest, (discord.TextChannel, discord.Thread)):
-            await ack(ctx, "Destination must be a text channel or thread.")
             return
         if ctx.message.reference is None or ctx.message.reference.message_id is None:
             await ack(ctx, "You need to **reply** to the message you want to move.")
@@ -203,16 +265,13 @@ class MoveCog(CleanCommandCog):
         ctx: commands.Context,
         member: discord.Member | None = None,
         n: int = 1,
-        dest: discord.abc.GuildChannel | None = None,
+        dest: MoveDestinationConverter = None,
     ) -> None:
         """Move the last N messages from @user in this channel to #channel."""
         if member is None or dest is None:
             await ack(ctx, "Usage: `!movelast @user N #channel`")
             return
-        if not isinstance(dest, (discord.TextChannel, discord.Thread)):
-            await ack(ctx, "Destination must be a text channel or thread.")
-            return
-        if not isinstance(ctx.channel, discord.TextChannel):
+        if not isinstance(ctx.channel, (discord.TextChannel, discord.Thread)):
             await ack(ctx, "This command only works in text channels.")
             return
         if dest.id == ctx.channel.id:
@@ -243,7 +302,7 @@ class MoveCog(CleanCommandCog):
         self,
         ctx: commands.Context,
         messages: list[discord.Message],
-        dest: discord.TextChannel | discord.Thread,
+        dest: MoveDestination,
         author: discord.abc.User,
     ) -> None:
         if not messages or not author:
@@ -259,7 +318,11 @@ class MoveCog(CleanCommandCog):
             await ack(ctx, "No guild context.")
             return
         src_perms = ctx.channel.permissions_for(me)
-        dst_perms = dest.permissions_for(me)
+        webhook_parent = _webhook_parent(dest)
+        if webhook_parent is None:
+            await ack(ctx, "Destination must be a text channel or thread.")
+            return
+        dst_perms = webhook_parent.permissions_for(me)
         if not dst_perms.manage_webhooks:
             await ack(ctx, f"I need **Manage Webhooks** in {dest.mention}.")
             return
