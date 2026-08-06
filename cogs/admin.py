@@ -173,9 +173,10 @@ class AdminCog(CleanCommandCog):
             ]),
         ]
 
-        # Filter groups for non-admins: only show "(mods)" groups
+        # Filter groups for non-admins: only show "(mods)" groups, not "(admin)" ones.
+        # Use explicit check to avoid substring collision with "(administrators)".
         if not is_admin_user:
-            groups = [(title, cmds) for title, cmds in groups if "(mods)" in title]
+            groups = [(title, cmds) for title, cmds in groups if title.endswith(" (mods)")]
 
         lines = [
             "**Clawy's commands** — `!help <command>` for details",
@@ -193,7 +194,13 @@ class AdminCog(CleanCommandCog):
             lines.append("")
             lines.append("_Additional admin-only commands exist (visible to admins)._")
 
-        await reply_permanent(ctx, "\n".join(lines))
+        full_text = "\n".join(lines)
+
+        # Send in 2000-char chunks to avoid Discord truncation
+        chunk_size = 2000
+        for i in range(0, len(full_text), chunk_size):
+            chunk = full_text[i:i + chunk_size]
+            await reply_permanent(ctx, chunk)
 
     # ---------- kill switch ----------
     @commands.command(name="pause")
