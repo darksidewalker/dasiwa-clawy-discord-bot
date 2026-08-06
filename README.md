@@ -1211,6 +1211,14 @@ owner_id: 0          # REQUIRED — your Discord user ID. Bot never acts on you.
 log_channel_id: 0    # Private admin/log channel. 0 = disabled.
 command_prefix: "!"
 
+# ── Permissions ──────────────────────────────────────────────────────
+# Roles listed here gain moderator-level commands (!purge, !kick, !ban, etc.).
+# Owner can always use all commands regardless. Entries can be role names
+# (case-insensitive) or numeric role IDs.
+permissions:
+  mod_roles: []              # e.g. ["Moderator"] or [123456789012345678]
+                             # empty = falls back to manage_messages/manage_guild perms
+
 # ── Bot mode ─────────────────────────────────────────────────────────
 mode: "chat_and_moderate"
 # Options: moderate_only | chat_and_moderate | chat_only
@@ -1220,6 +1228,20 @@ mode: "chat_and_moderate"
 # (e.g. "Seraphael hello"). If false (default), only the bot's Discord
 # display name + @mention work, avoiding confusion when personas change.
 respond_to_persona_name: false
+
+# ── Dynamic mood ─────────────────────────────────────────────────────
+# When true, Clawy can autonomously switch her mood based on conversation
+# context (e.g. becoming stern when warning someone). Disable to keep
+# moods admin-controlled only via !mood.
+dynamic_mood: false
+
+# ── NSFW channels ────────────────────────────────────────────────────
+# Channels listed here are treated as adult channels. Moderation is relaxed:
+# bold/sexual language is tolerated; adult content is not deleted unless illegal.
+# Regular rule-breaking (spam, harassment, threats) is still moderated.
+# Channel names are case-sensitive and must match Discord exactly.
+nsfw_channels: []
+  # - "nsfw-chat"
 
 # ── Storage ──────────────────────────────────────────────────────────
 database:
@@ -1266,7 +1288,6 @@ moderation:
   spam_strike_threshold: 3                 # total strikes (any kind) in strike_window_hours that escalate spam → timeout+delete
   spam_timeout_seconds: 600                # mute duration on escalation
   strike_window_hours: 24                  # rolling strike window
-  default_timeout_seconds: 600             # default mute when LLM picks "timeout" with no duration
 
   # Mention rate limit (how often a user can @mention the bot)
   mention_max: 4                           # max mentions allowed in window

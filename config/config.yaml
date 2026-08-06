@@ -92,8 +92,12 @@ moderation:
   # Occasional proactive replies — very low rate to feel natural
   proactive_reply_cooldown_seconds: 300  # at most once every 5 min per channel
   proactive_reply_chance: 0.02            # 2% chance (1 in 50 messages) — very occasional
-  spam_strike_threshold: 3     # total strikes within strike_window_hours that escalate spam from warn → timeout (with delete). Counts ALL prior mod events (warn/timeout/delete/kick/strike), not just spam.
-  spam_timeout_seconds: 600    # mute duration when spam escalates
+
+  # Spam detection thresholds
+  spam_threshold: 6                   # messages in window that trigger spam warning
+  spam_window_seconds: 10             # sliding window size in seconds
+  spam_strike_threshold: 3            # total strikes within strike_window_hours that escalate spam from warn → timeout (with delete). Counts ALL prior mod events (warn/timeout/delete/kick/strike), not just spam.
+  spam_timeout_seconds: 600           # mute duration when spam escalates
 
   # ---- Mention rate limit (how often a user can @mention the bot) ----
   mention_max: 4               # max @mentions allowed within the window
