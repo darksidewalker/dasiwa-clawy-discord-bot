@@ -33,20 +33,11 @@ from discord.ext import commands
 from core.config import CFG
 from core.store import STORE
 
-from ._common import CleanCommandCog, ack
+from ._common import CleanCommandCog, ack, _is_mod
 
 log = logging.getLogger(__name__)
 
 WEBHOOK_NAME = "persona-mover"   # bot-managed webhook name we look for / create
-
-
-def _is_admin(ctx: commands.Context) -> bool:
-    if ctx.author.id == CFG.owner_id:
-        return True
-    if isinstance(ctx.author, discord.Member):
-        perms = ctx.author.guild_permissions
-        return perms.administrator or perms.manage_messages
-    return False
 
 
 async def _get_or_create_webhook(channel: discord.TextChannel) -> discord.Webhook | None:
@@ -134,7 +125,7 @@ class MoveCog(CleanCommandCog):
             await self._http.close()
 
     def is_authorized(self, ctx: commands.Context) -> bool:
-        return _is_admin(ctx)
+        return _is_mod(ctx)
 
     # =====================================================
     # !moveto #channel [N]

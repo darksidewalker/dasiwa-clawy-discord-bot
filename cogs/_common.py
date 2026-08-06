@@ -34,6 +34,69 @@ log = logging.getLogger(__name__)
 ACK_LINGER_SECONDS = 6
 
 
+# ── Authorization helpers ──────────────────────────────────────────────
+
+_MOD_ROLES_CACHE: dict[int, set[int]] = {}
+
+
+def _resolve_mod_roles(guild: discord.Guild) -> set[int]:
+    """Lookup configured mod role IDs for a guild."""
+    from core.config import CFG
+
+    roles_config = CFG.raw.get("permissions", {}).get("mod_roles", [])
+    role_ids: set[int] = set()
+    for r in roles_config:
+        if isinstance(r, int):
+            role_ids.add(r)
+        elif isinstance(r, str):
+            role_ids |= {role.id for role in guild.roles if role.name.lower() == r.lower()}
+    return role_ids
+
+
+def _is_mod(ctx: commands.Context) -> bool:
+    """Check if author is owner OR has a configured Moderator role.
+
+    Config: permissions.mod_roles in config.yaml (list of role names or IDs).
+    Falls back to classic permissions (manage_messages/manage_guild) if no
+    mod_roles are configured. owner_id always passes.
+    """
+    from core.config import CFG
+
+    if ctx.author.id == CFG.owner_id:
+        return True
+
+    member = ctx.author if isinstance(ctx.author, discord.Member) else None
+    if not member or not member.guild:
+        return False
+
+    gid = member.guild.id
+    if gid not in _MOD_ROLES_CACHE:
+        _MOD_ROLES_CACHE[gid] = _resolve_mod_roles(member.guild)
+
+    mod_role_ids = _MOD_ROLES_CACHE[gid]
+    if not mod_role_ids:
+        # No mod_roles configured → fallback to classic permissions
+        perms = member.guild_permissions
+        return perms.manage_messages or perms.moderate_members
+    return any(role.id in mod_role_ids for role in member.roles)
+
+
+def _is_admin(ctx: commands.Context) -> bool:
+    """Check if author is owner OR has Administrator permission.
+
+    This is stricter than _is_mod(). Use for sensitive bot-control commands
+    like !pause, !mode, !persona, !reload, etc.
+    """
+    from core.config import CFG
+
+    if ctx.author.id == CFG.owner_id:
+        return True
+    member = ctx.author if isinstance(ctx.author, discord.Member) else None
+    if member:
+        return member.guild_permissions.administrator
+    return False
+
+
 async def delete_cmd(ctx: commands.Context) -> None:
     """Delete the invoking !command message.
 

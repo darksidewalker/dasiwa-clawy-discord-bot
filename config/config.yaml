@@ -4,6 +4,16 @@ owner_id: 0                  # REQUIRED: your Discord user ID — the bot will n
 log_channel_id: 0            # optional: channel ID for moderation logs (0 = disabled)
 command_prefix: "!"
 
+# ---- Permissions ----
+# Roles listed here can use moderator-level commands.
+# Owner (owner_id above) can always use all commands.
+# Entries can be role names (case-insensitive) or numeric role IDs.
+# Mod commands: !purge, !purgeuser, !purgethis, !moveto, !movelast, !kick, !ban, !mute, !unmute
+# Admin-only: !pause, !resume, !reload, !mode, !persona, !sleep, !wake, !diag, etc.
+permissions:
+  mod_roles:
+    - "Moderator"
+
 # ---- Bot mode ----
 # moderate_only  = silent observer + moderator. Never speaks unless a rule is broken or warning is needed.
 # chat_and_moderate = moderates AND will reply when @mentioned or when a direct question is asked.

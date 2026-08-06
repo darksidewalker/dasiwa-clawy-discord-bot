@@ -55,7 +55,7 @@ from discord.ext import commands
 from core.config import CFG
 from core.store import STORE
 
-from ._common import CleanCommandCog, ack, reply_permanent
+from ._common import CleanCommandCog, ack, reply_permanent, _is_mod
 
 log = logging.getLogger(__name__)
 
@@ -66,15 +66,6 @@ _BULK_DELETE_CUTOFF = timedelta(days=14, hours=-1)
 # Polite delay between single deletes (older messages or fallback path) so we
 # don't get rate-limited on long purges.
 _SINGLE_DELETE_SLEEP = 0.35
-
-
-def _is_admin(ctx: commands.Context) -> bool:
-    if ctx.author.id == CFG.owner_id:
-        return True
-    if isinstance(ctx.author, discord.Member):
-        perms = ctx.author.guild_permissions
-        return perms.administrator or perms.manage_messages
-    return False
 
 
 def _is_protected(member: discord.abc.User, guild: discord.Guild) -> bool:
@@ -94,7 +85,7 @@ class PurgeCog(CleanCommandCog):
         self.bot = bot
 
     def is_authorized(self, ctx: commands.Context) -> bool:
-        return _is_admin(ctx)
+        return _is_mod(ctx)
 
     # =====================================================
     # !purge #channel N [@user]

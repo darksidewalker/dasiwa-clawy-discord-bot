@@ -28,7 +28,7 @@ from core.config import CFG
 from core.gating import in_quiet_hours
 from core.store import STORE
 
-from ._common import CleanCommandCog, ack, reply_permanent
+from ._common import CleanCommandCog, ack, reply_permanent, _is_admin
 
 log = logging.getLogger(__name__)
 
@@ -36,14 +36,6 @@ log = logging.getLogger(__name__)
 _SLEEP_STATUS = "Resting... do not disturb."
 _AWAKE_STATUS = "Watching the realm."
 _QUIET_STATUS = "🌙 Quiet hours — still watching."
-
-
-def _is_admin(ctx: commands.Context) -> bool:
-    if ctx.author.id == CFG.owner_id:
-        return True
-    if isinstance(ctx.author, discord.Member):
-        return ctx.author.guild_permissions.administrator
-    return False
 
 
 def _parse_duration(text: str) -> int | None:

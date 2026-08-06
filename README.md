@@ -1039,9 +1039,19 @@ to the chat LLM.
 
 ## 15. All admin commands
 
-All commands require **Administrator** permission **or** matching `owner_id`.
+Clawy supports two access levels:
+
+- **Admin** — owner_id or anyone with Discord's **Administrator** permission.
+  Can use **all** commands below.
+- **Moderator** — configurable via `permissions.mod_roles` in `config/config.yaml`
+  (role names or numeric IDs). Falls back to `manage_messages` / `manage_guild`
+  permissions if no roles are configured.
+
 Regular users get no response when they try — their `!command` message is
 silently deleted.
+
+Commands marked **(mods)** may be used by moderators. Commands marked **(admin)**
+require full admin rights.
 
 **Where output goes:** transient confirmations ("Paused", usage hints, errors)
 appear briefly in the channel where you typed and self-delete after a few
@@ -1054,7 +1064,7 @@ back to the source channel.
 Run `!help` in Discord for a live grouped list, or `!help <command>` for the
 docstring of any specific command.
 
-### Bot control / kill switch
+### Bot control / kill switch **(admin)**
 
 | Command                                                | Effect |
 |--------------------------------------------------------|---|
@@ -1067,7 +1077,7 @@ docstring of any specific command.
 | `!diag`                                                | Health check across all subsystems: Ollama, log channel, DB, persona, moderation, expressions, gating, permissions. |
 | `!diag verbose`                                        | Same plus full catalog listings (every emoji name, every media key, every persona's moods). |
 
-### Mode and persona
+### Mode and persona **(admin)**
 
 | Command                            | Effect |
 |------------------------------------|---|
@@ -1081,7 +1091,7 @@ docstring of any specific command.
 | `!mood`                            | Show active mood and available options. |
 | `!mood <name>`                     | Switch mood — e.g. `!mood stern`. |
 
-### Model and thinking
+### Model and thinking **(admin)**
 
 | Command                            | Effect |
 |------------------------------------|---|
@@ -1091,7 +1101,7 @@ docstring of any specific command.
 | `!think on` / `!think off`         | Toggle the model's reasoning trace. |
 | `!think reset`                     | Drop session override; use YAML value. |
 
-### Chat gating
+### Chat gating **(admin)**
 
 Control *when* and *who* Clawy chats with. Moderation always runs regardless.
 
@@ -1112,7 +1122,10 @@ Control *when* and *who* Clawy chats with. Moderation always runs regardless.
 | `!jumpin`                                        | Make Clawy jump into the last 5 channel messages. |
 | `!jumpin 10`                                     | Same, but the last N (capped at 20). |
 
-### Manual moderation
+### Manual moderation **(mods)**
+
+Mods cannot kick/ban/mute the owner, guild owner, anyone with Administrator
+permission, or users in `protected_roles`.
 
 | Command                                          | Effect |
 |--------------------------------------------------|---|
@@ -1123,7 +1136,7 @@ Control *when* and *who* Clawy chats with. Moderation always runs regardless.
 
 Duration formats accepted: `30s`, `30m`, `2h`, `1h30m`, `1h30m20s`.
 
-### User info and memory
+### User info and memory **(admin)**
 
 | Command          | Effect |
 |------------------|---|
@@ -1132,7 +1145,7 @@ Duration formats accepted: `30s`, `30m`, `2h`, `1h30m`, `1h30m20s`.
 | `!recall @user`  | Last 10 chat memory turns. |
 | `!forget @user`  | Wipe chat memory (moderation history untouched). |
 
-### Message moving
+### Message moving **(mods)**
 
 | Command                              | Effect |
 |--------------------------------------|---|
@@ -1140,7 +1153,7 @@ Duration formats accepted: `30s`, `30m`, `2h`, `1h30m`, `1h30m20s`.
 | `!moveto #channel N`                 | Move replied message + up to N more from same author. |
 | `!movelast @user N #channel`         | Move last N messages from user in this channel. |
 
-### Message deletion (purge)
+### Message deletion (purge) **(mods)**
 
 | Command                              | Effect |
 |--------------------------------------|---|
@@ -1152,7 +1165,7 @@ Duration formats accepted: `30s`, `30m`, `2h`, `1h30m`, `1h30m20s`.
 
 Batch size is capped at `move.max_batch` (default 25). Protected users are silently skipped. `!purge` / `!purgeuser` respect `notify_user.*` config; `!purgethis` ignores those flags and always notifies.
 
-### Activity-based roles
+### Activity-based roles **(admin)**
 
 | Command                          | Effect |
 |----------------------------------|---|
@@ -1162,7 +1175,7 @@ Batch size is capped at `move.max_batch` (default 25). Protected users are silen
 | `!roles grants @user`            | Show which rules have fired for a user. |
 | `!roles reset @user <rule_id>`   | Clear a grant so the rule can fire again. |
 
-### Diagnostics and utilities
+### Diagnostics and utilities **(admin)**
 
 | Command                          | Effect |
 |----------------------------------|---|

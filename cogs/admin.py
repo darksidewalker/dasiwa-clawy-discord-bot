@@ -20,7 +20,7 @@ from core.persona import PERSONAS
 from core.prefilter import BLOCKLIST, _blocklist_enabled, _blocklist_path
 from core.store import STORE
 
-from ._common import CleanCommandCog, ack, reply_permanent
+from ._common import CleanCommandCog, ack, reply_permanent, _is_admin, _is_mod
 
 log = logging.getLogger(__name__)
 
@@ -35,11 +35,27 @@ def _reload_role_rules() -> str:
         return f"role_rules.json (FAILED: {e})"
 
 
-def _is_admin(ctx: commands.Context) -> bool:
-    if ctx.author.id == CFG.owner_id:
+def _target_is_above_actor(actor: discord.abc.User, target: discord.abc.User, guild: discord.Guild) -> bool:
+    """Return True if target should never be moderated by actor.
+
+    Used by mod-level commands (!kick, !ban, !mute, !unmute). Owner bypasses this entirely.
+    Blocks action on:
+      - owner_id
+      - guild owner
+      - anyone with Administrator permission
+      - anyone in protected_roles
+    """
+    if actor.id == CFG.owner_id:
+        return False   # owner can do whatever they want
+    if target.id == CFG.owner_id:
         return True
-    if isinstance(ctx.author, discord.Member):
-        return ctx.author.guild_permissions.administrator
+    if guild.owner_id == target.id:
+        return True
+    if isinstance(target, discord.Member):
+        if target.guild_permissions.administrator:
+            return True
+        if any(r.name in CFG.protected_roles for r in target.roles):
+            return True
     return False
 
 
@@ -47,8 +63,25 @@ class AdminCog(CleanCommandCog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
+    # Commands that require full admin (owner or Administrator permission).
+    # Everything else is accessible to moderators too.
+    _ADMIN_ONLY_COMMANDS = frozenset({
+        "pause", "resume", "reload",
+        "mode", "persona", "mood", "dynmood", "expressions", "triggers",
+        "model", "think",
+        "quiet", "chatroles", "proactive", "jumpin", "nsfw",
+        "whois", "strikes", "recall", "forget",
+        "roles",
+        "diag", "perms", "setlog",
+        "sleep", "wake", "sleepstatus",
+    })
+
     def is_authorized(self, ctx: commands.Context) -> bool:
-        return _is_admin(ctx)
+        cmd_name = ctx.command.name if ctx.command else None
+        if cmd_name in self._ADMIN_ONLY_COMMANDS:
+            return _is_admin(ctx)
+        # All other commands (kick, ban, mute, unmute) are mod-level
+        return _is_mod(ctx)
 
     # ---------- help ----------
     @commands.command(name="help")
@@ -80,8 +113,10 @@ class AdminCog(CleanCommandCog):
             return
 
         # List view: grouped. Keep short — detail via !help <command>.
+        is_admin_user = _is_admin(ctx)
+
         groups: list[tuple[str, list[tuple[str, str]]]] = [
-            ("Kill switch", [
+            ("Kill switch (admin)", [
                 ("pause",   "stop all autonomous actions"),
                 ("resume",  "re-enable autonomous actions"),
                 ("reload",  "hot-reload all configs + clear overrides"),
@@ -89,7 +124,7 @@ class AdminCog(CleanCommandCog):
                 ("wake",    "wake Clawy from sleep"),
                 ("sleepstatus", "show sleep state"),
             ]),
-            ("Mode & persona", [
+            ("Mode & persona (admin)", [
                 ("mode",    "show/switch bot mode"),
                 ("persona", "show/switch persona (or reload)"),
                 ("mood",    "show/switch mood for active persona"),
@@ -99,38 +134,38 @@ class AdminCog(CleanCommandCog):
                 ("model",   "show/switch Ollama model (session)"),
                 ("think",   "toggle Ollama reasoning trace on/off"),
             ]),
-            ("Chat gating", [
+            ("Chat gating (admin)", [
                 ("quiet",      "scheduled quiet hours — Clawy silent"),
                 ("chatroles",  "role allowlist — who Clawy chats with"),
                 ("proactive",  "chance of unsolicited replies"),
                 ("jumpin",     "make Clawy jump into the last N channel messages"),
                 ("nsfw",       "manage NSFW/adult channel list"),
             ]),
-            ("Moderation", [
+            ("Moderation (mods)", [
                 ("kick",   "manually kick a member"),
                 ("ban",    "manually ban a member"),
                 ("mute",   "manually timeout a member"),
                 ("unmute", "remove a timeout"),
             ]),
-            ("User info / memory", [
+            ("User info / memory (admin)", [
                 ("whois",   "DB profile for a user"),
                 ("strikes", "strike count + recent mod events"),
                 ("recall",  "show chat memory with a user"),
                 ("forget",  "wipe a user's chat memory"),
             ]),
-            ("Message moving", [
+            ("Message moving (mods)", [
                 ("moveto",   "move replied message (+ N) to a channel"),
                 ("movelast", "move a user's last N messages to a channel"),
             ]),
-            ("Message purging", [
+            ("Message purging (mods)", [
                 ("purgethis", "delete a single replied-to message (always notifies)"),
                 ("purge",     "delete last N messages in a channel (optional @user filter)"),
                 ("purgeuser", "delete last N messages from a user in a channel"),
             ]),
-            ("Roles engine", [
+            ("Roles engine (admin)", [
                 ("roles",    "manage activity-based role rules"),
             ]),
-            ("Diagnostics", [
+            ("Diagnostics (admin)", [
                 ("diag",     "health check across all subsystems (`!diag verbose` for full)"),
                 ("perms",    "show Clawy's permissions in this channel"),
                 ("setlog",   "set the log channel (session)"),
@@ -138,12 +173,26 @@ class AdminCog(CleanCommandCog):
             ]),
         ]
 
-        lines = ["**Clawy's commands** — `!help <command>` for details"]
+        # Filter groups for non-admins: only show "(mods)" groups
+        if not is_admin_user:
+            groups = [(title, cmds) for title, cmds in groups if "(mods)" in title]
+
+        lines = [
+            "**Clawy's commands** — `!help <command>` for details",
+            "",
+            "(mods) = moderator-level (configured via `permissions.mod_roles`)",
+            "(admin) = requires owner_id or Administrator permission",
+        ]
         for title, cmds in groups:
             lines.append("")
             lines.append(f"__{title}__")
             for name, blurb in cmds:
                 lines.append(f"  `!{name}` — {blurb}")
+
+        if not is_admin_user:
+            lines.append("")
+            lines.append("_Additional admin-only commands exist (visible to admins)._")
+
         await reply_permanent(ctx, "\n".join(lines))
 
     # ---------- kill switch ----------
@@ -809,6 +858,9 @@ class AdminCog(CleanCommandCog):
         if member is None:
             await ack(ctx, "Usage: `!kick @user [reason]`")
             return
+        if ctx.guild is None or _target_is_above_actor(ctx.author, member, ctx.guild):
+            await ack(ctx, "Cannot kick that user (protected or above you).")
+            return
         result = await execute_kick(ctx.guild, member, reason, actor_id=ctx.author.id)
         await ack(ctx, f"`{result}`")
 
@@ -817,6 +869,9 @@ class AdminCog(CleanCommandCog):
         """Manually ban a member. Usage: !ban @user [reason]"""
         if member is None:
             await ack(ctx, "Usage: `!ban @user [reason]`")
+            return
+        if ctx.guild is None or _target_is_above_actor(ctx.author, member, ctx.guild):
+            await ack(ctx, "Cannot ban that user (protected or above you).")
             return
         result = await execute_ban(ctx.guild, member, reason, actor_id=ctx.author.id)
         await ack(ctx, f"`{result}`")
@@ -827,6 +882,9 @@ class AdminCog(CleanCommandCog):
         Duration examples: 30m  2h  1h30m  (default: 10m)"""
         if member is None:
             await ack(ctx, "Usage: `!mute @user [duration] [reason]`")
+            return
+        if ctx.guild is None or _target_is_above_actor(ctx.author, member, ctx.guild):
+            await ack(ctx, "Cannot mute that user (protected or above you).")
             return
         import re
         m = re.match(r'^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$', duration.strip().lower())
@@ -845,6 +903,9 @@ class AdminCog(CleanCommandCog):
         """Remove a timeout from a member. Usage: !unmute @user"""
         if member is None:
             await ack(ctx, "Usage: `!unmute @user`")
+            return
+        if ctx.guild is None or _target_is_above_actor(ctx.author, member, ctx.guild):
+            await ack(ctx, "Cannot unmute that user (protected or above you).")
             return
         try:
             await member.timeout(None, reason=f"Unmuted by {ctx.author}")

@@ -29,7 +29,7 @@ from discord.ext import commands, tasks
 from core.config import CFG
 from core.store import STORE
 
-from ._common import CleanCommandCog, ack, reply_permanent
+from ._common import CleanCommandCog, ack, reply_permanent, _is_admin
 
 log = logging.getLogger(__name__)
 
@@ -376,13 +376,6 @@ class RolesCog(CleanCommandCog):
 
     # ── admin commands ────────────────────────────────────────────────
 
-    def _is_admin(self, ctx: commands.Context) -> bool:
-        if ctx.author.id == CFG.owner_id:
-            return True
-        if isinstance(ctx.author, discord.Member):
-            return ctx.author.guild_permissions.administrator
-        return False
-
     @commands.command(name="roles")
     async def roles_cmd(self, ctx: commands.Context, sub: str = "", *, arg: str = "") -> None:
         """
@@ -393,6 +386,9 @@ class RolesCog(CleanCommandCog):
           !roles grants @user — show which rules have already fired for a user
           !roles reset @user <rule_id> — clear a grant so the rule can fire again
         """
+        if not _is_admin(ctx):
+            await ctx.message.delete()
+            return
         if not sub or sub == "list":
             rules = RULE_ENGINE.rules()
             if not rules:
