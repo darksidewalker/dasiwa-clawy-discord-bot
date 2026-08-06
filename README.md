@@ -76,6 +76,20 @@ https://docs.astral.sh/uv/getting-started/installation/ and re-run the installer
 
 ### Docker
 
+Pull the official image from Docker Hub or build locally:
+
+**Using pre-built image (recommended):**
+```bash
+docker pull darksidewalker/dasiwa-clawy-discord-bot:v1.1.9
+cp .env.example .env
+$EDITOR .env            # paste DISCORD_TOKEN
+docker compose up -d clawy
+docker compose logs -f clawy
+```
+
+Tags available: `v1.1.9` (current release), `latest`
+
+**Building locally:**
 ```bash
 cp .env.example .env
 $EDITOR .env            # paste DISCORD_TOKEN
