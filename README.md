@@ -80,14 +80,14 @@ Pull the official image from Docker Hub or build locally:
 
 **Using pre-built image (recommended):**
 ```bash
-docker pull darksidewalker/dasiwa-clawy-discord-bot:1.2.0
+docker pull darksidewalker/dasiwa-clawy-discord-bot:1.2.1
 cp .env.example .env
 $EDITOR .env            # paste DISCORD_TOKEN
 docker compose up -d clawy
 docker compose logs -f clawy
 ```
 
-Tags available: `1.2.0` (current release), `latest`
+Tags available: `1.2.1` (current release), `latest`
 
 **Building locally:**
 ```bash

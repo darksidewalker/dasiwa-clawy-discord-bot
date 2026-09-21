@@ -6,6 +6,7 @@ import logging
 import signal
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from core.config import CFG
@@ -40,14 +41,16 @@ def build_bot() -> commands.Bot:
         nonlocal synced_commands
         log.info("logged in as %s (id=%s)", bot.user, bot.user.id if bot.user else "?")
         if not synced_commands:
+            # Refresh global commands first. This removes commands registered by
+            # older images; otherwise Discord keeps showing stale entries such
+            # as /help that this process cannot dispatch.
+            global_synced = await bot.tree.sync()
+            log.info("synced %d application commands globally", len(global_synced))
             if CFG.guild_id:
                 scope = discord.Object(id=CFG.guild_id)
                 bot.tree.copy_global_to(guild=scope)
                 synced = await bot.tree.sync(guild=scope)
                 log.info("synced %d application commands for guild", len(synced))
-            else:
-                synced = await bot.tree.sync()
-                log.info("synced %d application commands globally", len(synced))
             synced_commands = True
         log.info("mode=%s", CFG.mode)
         healthy = await OLLAMA.health()
@@ -56,6 +59,20 @@ def build_bot() -> commands.Bot:
                         CFG.ollama_url)
         else:
             log.info("Ollama reachable. Using model '%s'.", CFG.model)
+
+    @bot.tree.error
+    async def on_app_command_error(
+        interaction: discord.Interaction, error: app_commands.AppCommandError
+    ) -> None:
+        if isinstance(error, app_commands.CommandNotFound):
+            await interaction.response.send_message(
+                "This stale command was removed. Use Clawy's current command list.",
+                ephemeral=True,
+            )
+            return
+        log.exception("application command failed", exc_info=error)
+        if not interaction.response.is_done():
+            await interaction.response.send_message("Command failed. Check bot logs.", ephemeral=True)
 
     @bot.event
     async def on_command_error(ctx: commands.Context, error: Exception) -> None:
