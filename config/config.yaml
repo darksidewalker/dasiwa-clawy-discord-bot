@@ -2,7 +2,7 @@
 guild_id: 0                  # REQUIRED: right-click your server -> Copy Server ID (dev mode)
 owner_id: 0                  # REQUIRED: your Discord user ID — the bot will never act on you
 log_channel_id: 0            # optional: channel ID for moderation logs (0 = disabled)
-command_prefix: "!"
+command_prefix: ""             # Prefix commands disabled; use Discord slash commands.
 
 # ---- Permissions ----
 # Roles listed here can use moderator-level commands.

@@ -53,48 +53,45 @@ def _resolve_mod_roles(guild: discord.Guild) -> set[int]:
     return role_ids
 
 
-def _is_mod(ctx: commands.Context) -> bool:
-    """Check if author is owner OR has a configured Moderator role.
-
-    Config: permissions.mod_roles in config.yaml (list of role names or IDs).
-    Falls back to classic permissions (manage_messages/manage_guild) if no
-    mod_roles are configured. owner_id always passes.
-    """
-    from core.config import CFG
-
-    if ctx.author.id == CFG.owner_id:
+def is_mod_member(member: object, *, owner_id: int, mod_role_ids: set[int]) -> bool:
+    """Return whether a guild member may use moderator commands."""
+    if getattr(member, "id", None) == owner_id:
         return True
+    if not member:
+        return False
+    if not mod_role_ids:
+        perms = getattr(member, "guild_permissions", None)
+        return bool(perms and (perms.manage_messages or perms.moderate_members))
+    return any(role.id in mod_role_ids for role in getattr(member, "roles", ()))
+
+
+def is_admin_member(member: object, *, owner_id: int) -> bool:
+    """Return whether a guild member may use administrator commands."""
+    if getattr(member, "id", None) == owner_id:
+        return True
+    perms = getattr(member, "guild_permissions", None)
+    return bool(perms and perms.administrator)
+
+
+def _is_mod(ctx: commands.Context) -> bool:
+    """Check the invoking member against moderator permissions."""
+    from core.config import CFG
 
     member = ctx.author if isinstance(ctx.author, discord.Member) else None
     if not member or not member.guild:
         return False
-
     gid = member.guild.id
     if gid not in _MOD_ROLES_CACHE:
         _MOD_ROLES_CACHE[gid] = _resolve_mod_roles(member.guild)
-
-    mod_role_ids = _MOD_ROLES_CACHE[gid]
-    if not mod_role_ids:
-        # No mod_roles configured → fallback to classic permissions
-        perms = member.guild_permissions
-        return perms.manage_messages or perms.moderate_members
-    return any(role.id in mod_role_ids for role in member.roles)
+    return is_mod_member(member, owner_id=CFG.owner_id, mod_role_ids=_MOD_ROLES_CACHE[gid])
 
 
 def _is_admin(ctx: commands.Context) -> bool:
-    """Check if author is owner OR has Administrator permission.
-
-    This is stricter than _is_mod(). Use for sensitive bot-control commands
-    like !pause, !mode, !persona, !reload, etc.
-    """
+    """Check the invoking member against administrator permissions."""
     from core.config import CFG
 
-    if ctx.author.id == CFG.owner_id:
-        return True
     member = ctx.author if isinstance(ctx.author, discord.Member) else None
-    if member:
-        return member.guild_permissions.administrator
-    return False
+    return is_admin_member(member, owner_id=CFG.owner_id)
 
 
 async def delete_cmd(ctx: commands.Context) -> None:
@@ -131,6 +128,13 @@ async def ack(
     usage hints, and errors. Posts as the bot (Clawy) via plain channel.send —
     no reply chain (the original command is gone anyway).
     """
+    interaction = ctx.interaction
+    if interaction is not None:
+        try:
+            return await interaction.followup.send(text, ephemeral=True, wait=True)
+        except discord.DiscordException as e:
+            log.debug("interaction ack send failed: %s", e)
+            return None
     try:
         return await ctx.channel.send(
             text,
@@ -179,6 +183,14 @@ async def reply_permanent(
     if target is None:
         target = ctx.channel
 
+    interaction = ctx.interaction
+    if interaction is not None and not is_remote:
+        try:
+            return await interaction.followup.send(text, ephemeral=True, wait=True)
+        except discord.DiscordException as e:
+            log.warning("interaction permanent reply failed: %s", e)
+            return None
+
     try:
         sent = await target.send(
             text,
@@ -191,11 +203,16 @@ async def reply_permanent(
     # Breadcrumb in the source channel so the admin knows where the reply went.
     if is_remote:
         try:
-            await ctx.channel.send(
-                f"{ctx.author.mention} Sent to {target.mention}.",
-                allowed_mentions=discord.AllowedMentions(users=True),
-                delete_after=ACK_LINGER_SECONDS,
-            )
+            if interaction is not None:
+                await interaction.followup.send(
+                    f"Sent to {target.mention}.", ephemeral=True, wait=True
+                )
+            else:
+                await ctx.channel.send(
+                    f"{ctx.author.mention} Sent to {target.mention}.",
+                    allowed_mentions=discord.AllowedMentions(users=True),
+                    delete_after=ACK_LINGER_SECONDS,
+                )
         except discord.DiscordException:
             pass
 

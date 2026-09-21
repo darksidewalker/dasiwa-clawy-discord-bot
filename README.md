@@ -80,14 +80,14 @@ Pull the official image from Docker Hub or build locally:
 
 **Using pre-built image (recommended):**
 ```bash
-docker pull darksidewalker/dasiwa-clawy-discord-bot:1.1.9
+docker pull darksidewalker/dasiwa-clawy-discord-bot:1.2.0
 cp .env.example .env
 $EDITOR .env            # paste DISCORD_TOKEN
 docker compose up -d clawy
 docker compose logs -f clawy
 ```
 
-Tags available: `1.1.9` (current release), `latest`
+Tags available: `1.2.0` (current release), `latest`
 
 **Building locally:**
 ```bash
@@ -172,7 +172,7 @@ ollama:
 
 In the Discord Developer Portal → your app → **OAuth2** → **URL Generator**:
 
-Scopes: `bot`
+Scopes: `bot`, `applications.commands`
 
 Bot permissions to enable:
 - View Channels
@@ -1051,7 +1051,19 @@ to the chat LLM.
 
 ---
 
-## 15. All admin commands
+## 15. Commands
+
+Clawy uses Discord slash commands. Set `guild_id` to sync them immediately to one server on startup. Without it, Discord global propagation can take up to one hour.
+
+Prefix commands are disabled by default (`command_prefix: ""`). Slash commands: `/pause`, `/resume`, `/mode`, `/persona`, `/mood`, `/model`, `/think`, `/diagnostics`, `/strikes`, `/whois`, `/kick`, `/ban`, `/mute`, `/unmute`, `/purge`, `/purge-user`, `/move-last`, `/sleep`, `/wake`, `/roles`, `/quiet`, `/chat-roles`, `/proactive`.
+
+Right-click a message, then choose **Apps**: **Move message** selects a destination channel; **Delete message** deletes that message with normal user notification and audit logging. Both require moderator permission.
+
+Admin commands require `owner_id` or Discord Administrator permission. Moderation commands require `permissions.mod_roles`, or Manage Messages/Moderate Members when no moderator roles are configured. Responses are ephemeral unless sent to the configured log channel.
+
+Role-rule slash support: `/roles` lists/reloads rules; `/role-check`, `/role-grants`, and `/role-reset` manage individual members. Quiet-hours slash support shows, enables, disables, or resets settings. Use config files for role rule definitions and custom quiet-hour windows.
+
+### Legacy command reference
 
 Clawy supports two access levels:
 
@@ -1209,7 +1221,7 @@ Batch size is capped at `move.max_batch` (default 25). Protected users are silen
 guild_id: 0          # REQUIRED — your server ID
 owner_id: 0          # REQUIRED — your Discord user ID. Bot never acts on you.
 log_channel_id: 0    # Private admin/log channel. 0 = disabled.
-command_prefix: "!"
+command_prefix: ""           # Prefix commands disabled; use slash commands.
 
 # ── Permissions ──────────────────────────────────────────────────────
 # Roles listed here gain moderator-level commands (!purge, !kick, !ban, etc.).

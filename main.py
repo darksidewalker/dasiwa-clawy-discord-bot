@@ -28,14 +28,27 @@ def build_bot() -> commands.Bot:
     intents.guilds = True
 
     bot = commands.Bot(
-        command_prefix=CFG.command_prefix,
+        command_prefix=CFG.command_prefix or (),
         intents=intents,
         help_command=None,
     )
 
+    synced_commands = False
+
     @bot.event
     async def on_ready() -> None:
+        nonlocal synced_commands
         log.info("logged in as %s (id=%s)", bot.user, bot.user.id if bot.user else "?")
+        if not synced_commands:
+            if CFG.guild_id:
+                scope = discord.Object(id=CFG.guild_id)
+                bot.tree.copy_global_to(guild=scope)
+                synced = await bot.tree.sync(guild=scope)
+                log.info("synced %d application commands for guild", len(synced))
+            else:
+                synced = await bot.tree.sync()
+                log.info("synced %d application commands globally", len(synced))
+            synced_commands = True
         log.info("mode=%s", CFG.mode)
         healthy = await OLLAMA.health()
         if not healthy:
@@ -96,6 +109,7 @@ async def _main() -> None:
     await bot.load_extension("cogs.purge")
     await bot.load_extension("cogs.sleep")
     await bot.load_extension("cogs.roles")
+    await bot.load_extension("cogs.slash")
 
     stop = asyncio.Event()
 
