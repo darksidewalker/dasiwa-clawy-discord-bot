@@ -328,11 +328,14 @@ class SlashCog(commands.Cog):
         from core.vision import vision_enabled
         from core.ollama_client import OLLAMA
         from core.prompts import build_chat_system_prompt
-        images = None
-        if vision_enabled():
-            downloaded = await self._extract_images_from_message(target)
-            if downloaded:
-                images = downloaded
+        if not vision_enabled():
+            await interaction.followup.send("Vision is not enabled in config.", ephemeral=True)
+            return
+        downloaded = await self._extract_images_from_message(target)
+        if not downloaded:
+            await interaction.followup.send("Could not extract an image from that message (video, broken link, or download failed).", ephemeral=True)
+            return
+        images = downloaded
         system = build_chat_system_prompt(
             is_owner=False, owner_name="Master", channel_name=channel.name,
             structured_output=False,
@@ -400,11 +403,14 @@ class SlashCog(commands.Cog):
         from core.vision import vision_enabled
         from core.ollama_client import OLLAMA
         from core.prompts import build_chat_system_prompt
-        images = None
-        if vision_enabled():
-            downloaded = await self._extract_images_from_message(message)
-            if downloaded:
-                images = downloaded
+        if not vision_enabled():
+            await interaction.followup.send("Vision is not enabled in config.", ephemeral=True)
+            return
+        downloaded = await self._extract_images_from_message(message)
+        if not downloaded:
+            await interaction.followup.send("Could not extract an image from that message (video, broken link, or download failed).", ephemeral=True)
+            return
+        images = downloaded
         system = build_chat_system_prompt(
             is_owner=False, owner_name="Master", channel_name=channel.name,
             structured_output=False,
