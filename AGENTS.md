@@ -254,6 +254,10 @@ ollama:
   timeout_seconds: 45
   think: false                   # run reasoning trace? false = fast direct answers
 
+vision:
+  enabled: false                 # analyze image attachments (needs multimodal model)
+  max_bytes: 5242880             # max download size per attachment (default 5 MB)
+
 moderation:
   spam_threshold: 6              # messages
   spam_window_seconds: 10
