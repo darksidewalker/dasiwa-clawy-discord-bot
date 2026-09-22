@@ -389,17 +389,14 @@ class SlashCog(commands.Cog):
     async def react_to_message(
         self, interaction: discord.Interaction, message: discord.Message
     ) -> None:
-        # Context menu interactions may provide a Message without attachments populated.
-        # If no attachments are visible, fetch the full message by ID.
-        if not message.attachments and interaction.channel_id == message.channel.id:
-            try:
-                channel = interaction.guild.get_channel(interaction.channel_id)
-                if channel:
-                    full_msg = await channel.fetch_message(message.id)
-                    if full_msg.attachments:
-                        message = full_msg
-            except discord.DiscordException:
-                pass  # fall through with original message
+        # Context menu interactions don't include attachment data — fetch full message
+        try:
+            channel = interaction.channel
+            if isinstance(channel, (discord.TextChannel, discord.Thread)):
+                full_msg = await channel.fetch_message(message.id)
+                message = full_msg
+        except discord.DiscordException as e:
+            log.warning("react_to_message: failed to fetch message %s: %s", message.id, e)
 
         if not self._has_media(message):
             await interaction.response.send_message("Message has no media.", ephemeral=True)
@@ -409,16 +406,14 @@ class SlashCog(commands.Cog):
     async def analyze_message(
         self, interaction: discord.Interaction, message: discord.Message
     ) -> None:
-        # Context menu interactions may provide a Message without attachments populated.
-        if not message.attachments and interaction.channel_id == message.channel.id:
-            try:
-                channel = interaction.guild.get_channel(interaction.channel_id)
-                if channel:
-                    full_msg = await channel.fetch_message(message.id)
-                    if full_msg.attachments:
-                        message = full_msg
-            except discord.DiscordException:
-                pass
+        # Context menu interactions don't include attachment data — fetch full message
+        try:
+            channel = interaction.channel
+            if isinstance(channel, (discord.TextChannel, discord.Thread)):
+                full_msg = await channel.fetch_message(message.id)
+                message = full_msg
+        except discord.DiscordException as e:
+            log.warning("analyze_message: failed to fetch message %s: %s", message.id, e)
 
         if not self._has_media(message):
             await interaction.response.send_message("Message has no media.", ephemeral=True)
