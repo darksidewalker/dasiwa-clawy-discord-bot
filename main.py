@@ -41,16 +41,22 @@ def build_bot() -> commands.Bot:
         nonlocal synced_commands
         log.info("logged in as %s (id=%s)", bot.user, bot.user.id if bot.user else "?")
         if not synced_commands:
-            # Refresh global commands first. This removes commands registered by
-            # older images; otherwise Discord keeps showing stale entries such
-            # as /help that this process cannot dispatch.
-            global_synced = await bot.tree.sync()
-            log.info("synced %d application commands globally", len(global_synced))
             if CFG.guild_id:
+                # Publish only guild commands. Registering the same commands both
+                # globally and in the guild makes Discord show each one twice.
+                # First clear old global registrations, then install this local
+                # tree in the configured guild for immediate availability.
                 scope = discord.Object(id=CFG.guild_id)
-                bot.tree.copy_global_to(guild=scope)
+                registered = list(bot.tree.get_commands())
+                bot.tree.clear_commands(guild=None)
+                await bot.tree.sync()
+                for command in registered:
+                    bot.tree.add_command(command, guild=scope)
                 synced = await bot.tree.sync(guild=scope)
                 log.info("synced %d application commands for guild", len(synced))
+            else:
+                synced = await bot.tree.sync()
+                log.info("synced %d application commands globally", len(synced))
             synced_commands = True
         log.info("mode=%s", CFG.mode)
         healthy = await OLLAMA.health()
