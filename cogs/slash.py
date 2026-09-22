@@ -316,13 +316,11 @@ class SlashCog(commands.Cog):
         # Build the prompt based on action type
         if action == "react":
             prompt = (
-                f"React to this media in character. Be brief, expressive, and natural. "
-                f"The user posted this image/video."
+                f"You are looking at an image right now. First, describe in 1-2 sentences what you actually see in it — specific objects, colors, people, expressions, text, or actions. Then react to those specific details in character. Your reaction must reference something concrete from the image, not be a generic response."
             )
         else:
             prompt = (
-                f"Describe and analyze this media in detail. What do you see? "
-                f"What's happening? Comment on it naturally."
+                f"You are looking at an image right now. Describe in detail exactly what you see — objects, colors, people, expressions, text, setting, composition. Be specific and concrete. Then offer your thoughts or analysis on it naturally in character."
             )
         # Delegate to the chat handler with vision
         from core.vision import vision_enabled
@@ -392,13 +390,16 @@ class SlashCog(commands.Cog):
             return
         if action == "react":
             prompt = (
-                f"React to this media in character. Be brief, expressive, and natural. "
-                f"The user posted this image/video."
+                f"Look at this image carefully and react to it in character. "
+                f"Reference specific details you actually see — colors, objects, expressions, text, actions. "
+                f"Do NOT give a generic reaction; make it clear you're responding to THIS specific image. "
+                f"Keep it brief (1-3 sentences) and natural."
             )
         else:
             prompt = (
-                f"Describe and analyze this media in detail. What do you see? "
-                f"What's happening? Comment on it naturally."
+                f"Describe exactly what you see in this image. Be specific about objects, colors, text, people, "
+                f"expressions, setting, and any details that stand out. Then comment on it naturally in character. "
+                f"Do NOT give a generic description — prove you actually looked at the image by mentioning concrete details."
             )
         from core.vision import vision_enabled
         from core.ollama_client import OLLAMA
