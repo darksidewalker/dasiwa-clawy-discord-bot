@@ -112,87 +112,54 @@ class AdminCog(CleanCommandCog):
             await reply_permanent(ctx, "\n".join(lines))
             return
 
-        # List view: grouped. Keep short — detail via !help <command>.
+        # List view: dynamically built from registered commands.
         is_admin_user = _is_admin(ctx)
+        is_mod_user = _is_mod(ctx)
 
-        groups: list[tuple[str, list[tuple[str, str]]]] = [
-            ("Kill switch (admin)", [
-                ("pause",   "stop all autonomous actions"),
-                ("resume",  "re-enable autonomous actions"),
-                ("reload",  "hot-reload all configs + clear overrides"),
-                ("sleep",   "silence Clawy (optionally for a duration)"),
-                ("wake",    "wake Clawy from sleep"),
-                ("sleepstatus", "show sleep state"),
-            ]),
-            ("Mode & persona (admin)", [
-                ("mode",    "show/switch bot mode"),
-                ("persona", "show/switch persona (or reload)"),
-                ("mood",    "show/switch mood for active persona"),
-                ("dynmood", "toggle LLM autonomous mood switching"),
-                ("expressions", "show/reload emoji + media pool"),
-                ("triggers", "show/reload keyword→media triggers"),
-                ("model",   "show/switch Ollama model (session)"),
-                ("think",   "toggle Ollama reasoning trace on/off"),
-            ]),
-            ("Chat gating (admin)", [
-                ("quiet",      "scheduled quiet hours — Clawy silent"),
-                ("chatroles",  "role allowlist — who Clawy chats with"),
-                ("proactive",  "chance of unsolicited replies"),
-                ("jumpin",     "make Clawy jump into the last N channel messages"),
-                ("nsfw",       "manage NSFW/adult channel list"),
-            ]),
-            ("Moderation (mods)", [
-                ("kick",   "manually kick a member"),
-                ("ban",    "manually ban a member"),
-                ("mute",   "manually timeout a member"),
-                ("unmute", "remove a timeout"),
-            ]),
-            ("User info / memory (admin)", [
-                ("whois",   "DB profile for a user"),
-                ("strikes", "strike count + recent mod events"),
-                ("recall",  "show chat memory with a user"),
-                ("forget",  "wipe a user's chat memory"),
-            ]),
-            ("Message moving (mods)", [
-                ("moveto",   "move replied message (+ N) to a channel"),
-                ("movelast", "move a user's last N messages to a channel"),
-            ]),
-            ("Message purging (mods)", [
-                ("purgethis", "delete a single replied-to message (always notifies)"),
-                ("purge",     "delete last N messages in a channel (optional @user filter)"),
-                ("purgeuser", "delete last N messages from a user in a channel"),
-            ]),
-            ("Roles engine (admin)", [
-                ("roles",    "manage activity-based role rules"),
-            ]),
-            ("Diagnostics (admin)", [
-                ("diag",     "health check across all subsystems (`!diag verbose` for full)"),
-                ("perms",    "show Clawy's permissions in this channel"),
-                ("setlog",   "set the log channel (session)"),
-                ("help",     "this list (use `!help <command>` for details)"),
-            ]),
-        ]
+        # Collect all command groups from loaded cogs
+        groups: list[tuple[str, list[tuple[str, str]]]] = []
 
-        # Filter groups for non-admins: only show "(mods)" groups, not "(admin)" ones.
-        # Use explicit check to avoid substring collision with "(administrators)".
-        if not is_admin_user:
-            groups = [(title, cmds) for title, cmds in groups if title.endswith(" (mods)")]
+        for cog in self.bot.cogs.values():
+            cog_name = cog.__class__.__name__
+            if not hasattr(cog, "commands"):
+                continue
+            cmd_list = []
+            for cmd in cog.commands:
+                if cmd.hidden:
+                    continue
+                # Check authorization level
+                if isinstance(cog, AdminCog):
+                    if cmd.name in AdminCog._ADMIN_ONLY_COMMANDS and not is_admin_user:
+                        continue
+                    if cmd.name not in AdminCog._ADMIN_ONLY_COMMANDS and not is_mod_user:
+                        continue
+                else:
+                    # Non-admin cogs are accessible to mods or above
+                    if not is_mod_user:
+                        continue
+                desc = (cmd.help or "").split("\n")[0].strip()[:120]
+                cmd_list.append((cmd.name, desc))
+            if cmd_list:
+                groups.append((cog_name, cmd_list))
+
+        # Sort commands within each group alphabetically
+        for i, (_, cmds) in enumerate(groups):
+            groups[i] = (groups[i][0], sorted(cmds, key=lambda x: x[0]))
 
         lines = [
             "**Clawy's commands** — `!help <command>` for details",
             "",
-            "(mods) = moderator-level (configured via `permissions.mod_roles`)",
-            "(admin) = requires owner_id or Administrator permission",
+            "(mods) = moderator-level | (admin) = owner or Administrator permission",
         ]
-        for title, cmds in groups:
+        for cog_name, cmds in groups:
             lines.append("")
-            lines.append(f"__{title}__")
-            for name, blurb in cmds:
-                lines.append(f"  `!{name}` — {blurb}")
+            lines.append(f"__{cog_name}__")
+            for name, desc in cmds:
+                lines.append(f"  `!{name}` — {desc}")
 
-        if not is_admin_user:
+        if not is_mod_user:
             lines.append("")
-            lines.append("_Additional admin-only commands exist (visible to admins)._")
+            lines.append("_Moderator and admin commands hidden. Use `!help <command>` to check a specific one._")
 
         full_text = "\n".join(lines)
 
