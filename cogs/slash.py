@@ -234,6 +234,10 @@ class SlashCog(commands.Cog):
     ) -> None:
         await self._run(interaction, "jumpin", max(1, min(count, 20)), admin=True)
 
+    @app_commands.command(description="Show Clawy's command list.")
+    async def help(self, interaction: discord.Interaction) -> None:
+        await self._run(interaction, "help")
+
     @app_commands.command(description="Make Clawy react in character to recent media.")
     async def react(self, interaction: discord.Interaction) -> None:
         await self._media_action(interaction, "react", admin=False)
