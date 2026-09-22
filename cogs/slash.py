@@ -234,6 +234,142 @@ class SlashCog(commands.Cog):
     ) -> None:
         await self._run(interaction, "jumpin", max(1, min(count, 20)), admin=True)
 
+    @app_commands.command(description="Make Clawy react in character to recent media.")
+    async def react(self, interaction: discord.Interaction) -> None:
+        await self._media_action(interaction, "react")
+
+    @app_commands.command(description="Have Clawy analyze and describe recent media.")
+    async def analyze(self, interaction: discord.Interaction) -> None:
+        await self._media_action(interaction, "analyze")
+
+    async def _media_action(
+        self, interaction: discord.Interaction, action: str
+    ) -> None:
+        context = await self._context(interaction, admin=True)
+        if context is None:
+            return
+        channel = interaction.channel
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            await interaction.followup.send("No channel found.", ephemeral=True)
+            return
+        # Find most recent message with attachments in this channel
+        try:
+            async for msg in channel.history(limit=20):
+                if msg.attachments and not msg.author.bot:
+                    target = msg
+                    break
+            else:
+                await interaction.followup.send("No recent media found.", ephemeral=True)
+                return
+        except discord.DiscordException as e:
+            await interaction.followup.send(f"Could not read channel: {e}", ephemeral=True)
+            return
+        # Build the prompt based on action type
+        if action == "react":
+            prompt = (
+                f"React to this media in character. Be brief, expressive, and natural. "
+                f"The user posted this image/video."
+            )
+        else:
+            prompt = (
+                f"Describe and analyze this media in detail. What do you see? "
+                f"What's happening? Comment on it naturally."
+            )
+        # Delegate to the chat handler with vision
+        from core.vision import vision_enabled, fetch_attachment_image
+        from core.ollama_client import OLLAMA
+        from core.prompts import build_chat_system_prompt
+        images = None
+        if vision_enabled():
+            downloaded = []
+            for att in target.attachments[:4]:
+                img = await fetch_attachment_image(att)
+                if img:
+                    downloaded.append(img)
+            if downloaded:
+                images = downloaded
+        system = build_chat_system_prompt(
+            is_owner=False, owner_name="Master", channel_name=channel.name,
+            structured_output=False,
+        )
+        if action == "react":
+            system += "\n\nThe user wants you to react emotionally to the media. Keep it short and in character."
+        try:
+            async with channel.typing():
+                reply = await OLLAMA.generate_text(system, prompt, images=images)
+            if reply:
+                await channel.send(reply[:1800], reference=target, mention_author=False)
+                await interaction.followup.send("Done.", ephemeral=True)
+            else:
+                await interaction.followup.send("No response from model.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"Failed: {e}", ephemeral=True)
+
+    async def react_to_message(
+        self, interaction: discord.Interaction, message: discord.Message
+    ) -> None:
+        if not message.attachments:
+            await interaction.response.send_message("Message has no media.", ephemeral=True)
+            return
+        await self._media_action_on(interaction, message, "react")
+
+    async def analyze_message(
+        self, interaction: discord.Interaction, message: discord.Message
+    ) -> None:
+        if not message.attachments:
+            await interaction.response.send_message("Message has no media.", ephemeral=True)
+            return
+        await self._media_action_on(interaction, message, "analyze")
+
+    async def _media_action_on(
+        self, interaction: discord.Interaction, message: discord.Message, action: str
+    ) -> None:
+        context = await self._context(interaction, admin=True)
+        if context is None:
+            return
+        channel = interaction.channel
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            await interaction.followup.send("No channel found.", ephemeral=True)
+            return
+        if action == "react":
+            prompt = (
+                f"React to this media in character. Be brief, expressive, and natural. "
+                f"The user posted this image/video."
+            )
+        else:
+            prompt = (
+                f"Describe and analyze this media in detail. What do you see? "
+                f"What's happening? Comment on it naturally."
+            )
+        from core.vision import vision_enabled, fetch_attachment_image
+        from core.ollama_client import OLLAMA
+        from core.prompts import build_chat_system_prompt
+        images = None
+        if vision_enabled():
+            downloaded = []
+            for att in message.attachments[:4]:
+                img = await fetch_attachment_image(att)
+                if img:
+                    downloaded.append(img)
+            if downloaded:
+                images = downloaded
+        system = build_chat_system_prompt(
+            is_owner=False, owner_name="Master", channel_name=channel.name,
+            structured_output=False,
+        )
+        if action == "react":
+            system += "\n\nThe user wants you to react emotionally to the media. Keep it short and in character."
+        try:
+            async with channel.typing():
+                reply = await OLLAMA.generate_text(system, prompt, images=images)
+            if reply:
+                await channel.send(reply[:1800], reference=message, mention_author=False)
+                await interaction.followup.send("Done.", ephemeral=True)
+            else:
+                await interaction.followup.send("No response from model.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"Failed: {e}", ephemeral=True)
+
     @app_commands.command(description="Set proactive reply chance (0 disables).")
     async def proactive(self, interaction: discord.Interaction, chance: app_commands.Range[float, 0, 1]) -> None:
         await self._run(interaction, "proactive", str(chance), admin=True)
@@ -281,3 +417,5 @@ async def setup(bot: commands.Bot) -> None:
     bot.tree.add_command(app_commands.ContextMenu(name="Delete message", callback=slash.delete_message))
     bot.tree.add_command(app_commands.ContextMenu(name="Move message", callback=slash.move_message))
     bot.tree.add_command(app_commands.ContextMenu(name="Clawy jump in", callback=slash.jump_in_here))
+    bot.tree.add_command(app_commands.ContextMenu(name="Clawy react to this", callback=slash.react_to_message))
+    bot.tree.add_command(app_commands.ContextMenu(name="Clawy analyze this", callback=slash.analyze_message))
