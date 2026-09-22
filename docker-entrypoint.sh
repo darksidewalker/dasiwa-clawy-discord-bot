@@ -162,21 +162,29 @@ def set_str(key, env_name):
         cfg[key] = v
         changed.append(f"{key}={v}")
 
-def set_nested(parent, child, env_name):
+def set_nested(parent, child, env_name, cast=str):
     v = os.environ.get(env_name)
     if v is None or v == "":
         return
+    try:
+        value = cast(v)
+    except ValueError:
+        print(f"[clawy] {env_name}={v!r} has the wrong type — ignored")
+        return
     if not isinstance(cfg.get(parent), dict):
         cfg[parent] = {}
-    if cfg[parent].get(child) != v:
-        cfg[parent][child] = v
-        changed.append(f"{parent}.{child}={v}")
+    if cfg[parent].get(child) != value:
+        cfg[parent][child] = value
+        changed.append(f"{parent}.{child}={value}")
 
 set_int("guild_id", "GUILD_ID")
 set_int("owner_id", "OWNER_ID")
 set_int("log_channel_id", "LOG_CHANNEL_ID")
 set_str("mode", "BOT_MODE")
 set_nested("ollama", "model", "OLLAMA_MODEL")
+set_nested("ollama", "temperature", "OLLAMA_TEMPERATURE", float)
+set_nested("ollama", "top_p", "OLLAMA_TOP_P", float)
+set_nested("ollama", "top_k", "OLLAMA_TOP_K", int)
 
 if changed:
     try:

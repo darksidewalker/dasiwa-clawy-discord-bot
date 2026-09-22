@@ -42,6 +42,8 @@ class OllamaClient:
             "think": think,
             "options": {
                 "temperature": CFG.temperature,
+                "top_p": CFG.top_p,
+                "top_k": CFG.top_k,
                 "num_ctx": CFG.num_ctx,
                 "num_predict": CFG.num_predict,
                 "num_thread": CFG.num_thread,

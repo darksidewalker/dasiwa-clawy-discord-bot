@@ -3,7 +3,24 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from core.config import CFG
 from core.ollama_client import OllamaClient
+
+
+def test_plain_payload_passes_sampler_options() -> None:
+    ollama = CFG.raw.setdefault("ollama", {})
+    original = dict(ollama)
+    try:
+        ollama.update({"temperature": 1.0, "top_p": 0.95, "top_k": 64})
+        payload = OllamaClient._build_payload("system", "user", think=False)
+        options = payload["options"]
+        assert isinstance(options, dict)
+        assert options["temperature"] == 1.0
+        assert options["top_p"] == 0.95
+        assert options["top_k"] == 64
+    finally:
+        ollama.clear()
+        ollama.update(original)
 
 
 def test_plain_payload_explicitly_disables_thinking() -> None:

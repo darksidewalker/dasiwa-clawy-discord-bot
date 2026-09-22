@@ -72,7 +72,9 @@ dynamic_mood: false
 # See README for model recommendations per hardware tier.
 ollama:
   model: "hermes3:3b"       # The model identifier. Hermes 3 3B is optimized for steerability and RP.
-  temperature: 0.85         # Controls randomness. 0.85 is great for expressive Roleplay without losing logic.
+  temperature: 0.85         # Controls randomness. Adjust per model (for example 1.0 for Gemma 4).
+  top_p: 0.95               # Nucleus sampling probability.
+  top_k: 64                 # Limit sampling to the K most likely tokens.
   num_ctx: 4096             # The context window (tokens). 4096 is the "sweet spot" for 7GB available RAM. Higher values significantly increase RAM consumption and slow down CPU processing.
   num_thread: 6             # Number of CPU threads. Set to 6 to match your physical cores for max efficiency. Avoid exceeding physical core count to prevent system-wide latency.
   num_predict: 120          # Max tokens to generate per response. 320 is plenty for mod-logs and short RP.

@@ -162,6 +162,14 @@ class Config:
         return float(self.raw.get("ollama", {}).get("temperature", 0.3))
 
     @property
+    def top_p(self) -> float:
+        return float(self.raw.get("ollama", {}).get("top_p", 0.95))
+
+    @property
+    def top_k(self) -> int:
+        return int(self.raw.get("ollama", {}).get("top_k", 40))
+
+    @property
     def num_ctx(self) -> int:
         return int(self.raw.get("ollama", {}).get("num_ctx", 4096))
 

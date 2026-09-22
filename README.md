@@ -1273,7 +1273,9 @@ ignored_channels:
 # ── Ollama ───────────────────────────────────────────────────────────
 ollama:
   model: "hermes3:3b"          # model identifier
-  temperature: 0.85            # randomness; 0.6–0.9 is sane for chat
+  temperature: 0.85            # randomness; adjust per model (e.g. 1.0 for Gemma 4)
+  top_p: 0.95                  # nucleus sampling probability
+  top_k: 64                    # limit sampling to K most likely tokens
   num_ctx: 4096                # context window in tokens
   num_thread: 6                # CPU threads (match physical cores)
   num_predict: 320             # max tokens generated per response
