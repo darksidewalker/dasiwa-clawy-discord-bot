@@ -256,10 +256,10 @@ class SlashCog(commands.Cog):
         if not isinstance(channel, (discord.TextChannel, discord.Thread)):
             await interaction.followup.send("No channel found.", ephemeral=True)
             return
-        # Find most recent message with attachments in this channel
+        # Find most recent message with media in this channel
         try:
             async for msg in channel.history(limit=20):
-                if msg.attachments and not msg.author.bot:
+                if self._has_media(msg) and not msg.author.bot:
                     target = msg
                     break
             else:
@@ -290,6 +290,25 @@ class SlashCog(commands.Cog):
                 img = await fetch_attachment_image(att)
                 if img:
                     downloaded.append(img)
+            # Also try embed images
+            if not downloaded and target.embeds:
+                for emb in target.embeds[:2]:
+                    url = None
+                    if emb.image and emb.image.url:
+                        url = emb.image.url
+                    elif emb.thumbnail and emb.thumbnail.url:
+                        url = emb.thumbnail.url
+                    if url:
+                        try:
+                            import aiohttp
+                            async with aiohttp.ClientSession() as session:
+                                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                                    if resp.status == 200 and len(await resp.read()) < 5 * 1024 * 1024:
+                                        import base64
+                                        data = await resp.read()
+                                        downloaded.append(base64.b64encode(data).decode("utf-8"))
+                        except Exception:
+                            pass
             if downloaded:
                 images = downloaded
         system = build_chat_system_prompt(
@@ -309,10 +328,21 @@ class SlashCog(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"Failed: {e}", ephemeral=True)
 
+    def _has_media(self, message: discord.Message) -> bool:
+        """Check if a message contains any media (attachments or embeds with images)."""
+        if message.attachments:
+            return True
+        for emb in message.embeds:
+            if emb.image and emb.image.url:
+                return True
+            if emb.thumbnail and emb.thumbnail.url:
+                return True
+        return False
+
     async def react_to_message(
         self, interaction: discord.Interaction, message: discord.Message
     ) -> None:
-        if not message.attachments:
+        if not self._has_media(message):
             await interaction.response.send_message("Message has no media.", ephemeral=True)
             return
         await self._media_action_on(interaction, message, "react")
@@ -320,7 +350,7 @@ class SlashCog(commands.Cog):
     async def analyze_message(
         self, interaction: discord.Interaction, message: discord.Message
     ) -> None:
-        if not message.attachments:
+        if not self._has_media(message):
             await interaction.response.send_message("Message has no media.", ephemeral=True)
             return
         await self._media_action_on(interaction, message, "analyze")
@@ -355,6 +385,25 @@ class SlashCog(commands.Cog):
                 img = await fetch_attachment_image(att)
                 if img:
                     downloaded.append(img)
+            # Also try embed images
+            if not downloaded and message.embeds:
+                for emb in message.embeds[:2]:
+                    url = None
+                    if emb.image and emb.image.url:
+                        url = emb.image.url
+                    elif emb.thumbnail and emb.thumbnail.url:
+                        url = emb.thumbnail.url
+                    if url:
+                        try:
+                            import aiohttp
+                            async with aiohttp.ClientSession() as session:
+                                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                                    if resp.status == 200 and len(await resp.read()) < 5 * 1024 * 1024:
+                                        import base64
+                                        data = await resp.read()
+                                        downloaded.append(base64.b64encode(data).decode("utf-8"))
+                        except Exception:
+                            pass
             if downloaded:
                 images = downloaded
         system = build_chat_system_prompt(
