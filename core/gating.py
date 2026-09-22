@@ -91,11 +91,14 @@ def quiet_status_line() -> str:
 def is_chat_allowed(author: discord.abc.User) -> bool:
     """Check if the author's roles permit Clawy to chat with them.
 
+    Owner always bypasses this check (if owner_id is configured).
     Empty allowlist = everyone can chat (the default — matches prior behavior).
     Non-empty allowlist = ONLY members of those named roles get replies.
     Non-Member authors (rare — mostly DMs, which already bail earlier) are
     treated as allowed.
     """
+    if CFG.owner_id and author.id == CFG.owner_id:
+        return True
     allowed = set(CFG.chat_allowed_roles)
     if not allowed:
         return True

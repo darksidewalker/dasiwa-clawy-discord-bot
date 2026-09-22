@@ -1266,7 +1266,11 @@ class AdminCog(CleanCommandCog):
         )
 
         from core.prompts import build_chat_system_prompt
-        system = build_chat_system_prompt(is_owner=False, channel_name=ctx.channel.name)
+        system = build_chat_system_prompt(
+            is_owner=False,
+            channel_name=ctx.channel.name,
+            structured_output=False,
+        )
 
         user_prompt = (
             f"You are watching this conversation in #{ctx.channel.name} and decide to jump in "
@@ -1277,8 +1281,8 @@ class AdminCog(CleanCommandCog):
 
         try:
             async with ctx.channel.typing():
-                result = await asyncio.wait_for(
-                    OLLAMA.generate_json(system, user_prompt),
+                text = await asyncio.wait_for(
+                    OLLAMA.generate_text(system, user_prompt),
                     timeout=CFG.ollama_timeout + 10,
                 )
         except asyncio.TimeoutError:
@@ -1290,19 +1294,14 @@ class AdminCog(CleanCommandCog):
             await ack(ctx, f"❌ Ollama error: {type(e).__name__}")
             return
 
-        if not isinstance(result, dict):
-            log.warning("!jumpin: non-dict result: %r", result)
-            await ack(ctx, "❌ Model returned invalid JSON.")
-            return
-
-        text = str(result.get("message", "")).strip()[:1800]
+        text = text.strip()[:1800] if text else ""
         if not text:
-            log.warning("!jumpin: empty message in result: %r", result)
+            log.warning("!jumpin: model returned an empty reply")
             await ack(ctx, "❌ Model returned an empty reply.")
             return
 
         try:
-            await send_with_extras(ctx.channel, text, result, cfg=CFG)
+            await send_with_extras(ctx.channel, text, {}, cfg=CFG)
         except discord.DiscordException as e:
             log.warning("!jumpin send failed: %s", e)
             await ack(ctx, f"❌ Send failed: {type(e).__name__}")

@@ -38,13 +38,11 @@ class MembersCog(commands.Cog):
         system = (
             f"{PERSONAS.render()}\n\n"
             "Write ONE short welcome line (<= 140 chars) for a new member joining the server. "
-            "Return JSON: {\"message\": \"...\"}."
+            "Return only the welcome message in plain text. Do not output JSON or metadata."
         )
         user = f"New member: {member.display_name}"
-        result = await OLLAMA.generate_json(system, user)
-        text = None
-        if result and isinstance(result, dict):
-            text = str(result.get("message", "")).strip()[:300]
+        text = await OLLAMA.generate_text(system, user)
+        text = text.strip()[:300] if text else ""
         if not text:
             text = f"Welcome, {member.mention}."
         try:

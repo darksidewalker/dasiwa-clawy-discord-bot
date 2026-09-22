@@ -29,11 +29,15 @@ from core.chat_memory import (
 from core.executor import execute
 from core.expressions import send_with_extras
 from core.gating import in_quiet_hours, is_chat_allowed
+from core.moderation_decision import (
+    build_moderation_classifier_prompt,
+    parse_moderation_decision,
+)
 from core.triggers import TRIGGERS, fire_trigger
 from core.ollama_client import OLLAMA
 from core.persona import PERSONAS
 from core.prefilter import prefilter
-from core.prompts import build_chat_system_prompt, build_system_prompt
+from core.prompts import build_chat_system_prompt
 from core.store import STORE
 from core.tracking import MENTION_RL, SPAM
 
@@ -347,14 +351,6 @@ class ModerationCog(commands.Cog):
         effective_mention = was_mentioned and author_allowed
 
         is_nsfw_channel = message.channel.name in CFG.nsfw_channels
-        if is_nsfw_channel:
-            # NSFW channels: LLM may only chat or stay silent. Never moderate.
-            # Rule-based prefilter (blocklist/spam/caps/mentions) still applies.
-            allowed = {"reply", "ignore"} if author_allowed else {"ignore"}
-        elif author_allowed:
-            allowed = CFG.allowed_actions | {"ignore", "reply"}
-        else:
-            allowed = (CFG.allowed_actions | {"ignore"}) - {"reply"}
 
         # Throttle: don't ask the LLM about every benign message.
         # If not mentioned, skip unless the content looks noteworthy OR the dice say so.
@@ -387,50 +383,80 @@ class ModerationCog(commands.Cog):
             author.id, CFG.mod.get("strike_window_hours", 24)
         )
 
-        system = build_system_prompt(allowed, channel_name=message.channel.name)
-        
-        # Check if this is the owner — special treatment in moderation too
-        is_owner = author.id == CFG.owner_id
-        owner_flag = (
-            "OWNER/MASTER (respond with complete deference and obedience, never moderate or challenge) "
-            if is_owner
-            else ""
-        )
-        
-        # Channel type flag for the user prompt
-        is_nsfw_channel = message.channel.name in CFG.nsfw_channels
+        system = build_moderation_classifier_prompt(nsfw=is_nsfw_channel)
+
+        # Channel type flag for the untrusted classifier input.
         channel_type_flag = "NSFW_ADULT_CHANNEL " if is_nsfw_channel else ""
-        
+
         user = (
             f"Channel: #{message.channel.name}\n"
             f"Author: {author.display_name} (strikes in last 24h: {strikes})\n"
             f"Flags: "
-            f"{owner_flag}"
             f"{channel_type_flag}"
-            f"{'UNAUTHORIZED_INTERACTION_ATTEMPT ' if was_mentioned and not author_allowed else ''}"
             f"{'BOT_WAS_MENTIONED ' if was_mentioned else ''}"
             f"{'AUTHOR_IS_PROTECTED ' if author_roles & set(CFG.protected_roles) else ''}"
             f"{'AUTHOR_IS_NEW_ACCOUNT ' if is_new else ''}"
             f"\n"
             f"Recent chat:\n"
             + ("\n".join(list(self._channel_ctx[message.channel.id])[:-1]) or "(none)")
-            + f"\n\nInput content for evaluation from {author.display_name}:\n<user_input>\n{message.content[:500]}\n</user_input>\n\n"
-            f"Respond with the JSON action object."
+            + f"\n\nInput content for evaluation from {author.display_name}:\n"
+            f"<user_input>\n{message.content[:500]}\n</user_input>"
         )
 
         try:
             async with message.channel.typing():
-                result = await asyncio.wait_for(
-                    OLLAMA.generate_json(system, user),
+                raw_decision = await asyncio.wait_for(
+                    OLLAMA.generate_text(system, user),
                     timeout=CFG.ollama_timeout + 2,
                 )
         except asyncio.TimeoutError:
-            log.warning("Ollama (mod) timed out")
-            return None
+            log.warning("Ollama (mod classifier) timed out")
+            return {"action": "review", "reason": "moderation classifier timed out"}
 
-        if not isinstance(result, dict):
-            return None
-        return result
+        if not raw_decision:
+            return {"action": "review", "reason": "moderation classifier returned no decision"}
+
+        decision = parse_moderation_decision(raw_decision)
+        if decision == "reply" and not author_allowed:
+            decision = "ignore"
+        if decision in {"ignore", "review"}:
+            return {
+                "action": decision,
+                "reason": (
+                    "model decision requires human review"
+                    if decision == "review"
+                    else "no explicit rule violation"
+                ),
+            }
+
+        if decision == "warn":
+            warning_system = (
+                "Write one short, calm Discord moderation warning in plain text. "
+                "Do not output JSON, labels, analysis, threats, or punishment details."
+            )
+            warning_user = (
+                "Warn the author to stop the explicit rule-breaking conduct in this message:\n"
+                f"<user_input>\n{message.content[:500]}\n</user_input>"
+            )
+            warning = await OLLAMA.generate_text(warning_system, warning_user)
+            return {
+                "action": "warn",
+                "reason": "plain-text classifier identified an explicit violation",
+                "message": warning or "Please stop that conduct and follow the server rules.",
+            }
+
+        reply_system = build_chat_system_prompt(
+            is_owner=author.id == CFG.owner_id,
+            owner_name=author.display_name,
+            channel_name=message.channel.name,
+            structured_output=False,
+        )
+        reply = await OLLAMA.generate_text(reply_system, message.content[:800])
+        return {
+            "action": "reply" if reply else "review",
+            "reason": "plain-text classifier selected reply",
+            "message": reply or "",
+        }
 
     # ================================================================
     # CHAT FLOW
@@ -457,6 +483,7 @@ class ModerationCog(commands.Cog):
             is_owner=is_owner,
             owner_name=message.author.display_name if is_owner else "Master",
             channel_name=message.channel.name,
+            structured_output=False,
         )
 
         memory_packet = await build_chat_memory_packet(
@@ -483,35 +510,38 @@ class ModerationCog(commands.Cog):
             f"{normalize_message_text(message.content, limit=800)}\n\n"
             f"Use recent raw turns and the new message as highest priority. "
             f"Use older summarized memory only when it is clearly relevant; ignore it if stale or conflicting.\n\n"
-            f"Output ONLY this JSON object, nothing else:\n{{\"message\": \"your reply here\"}}"
+            f"Reply with only the message to post in Discord."
         )
 
         try:
             async with message.channel.typing():
-                result = await asyncio.wait_for(
-                    OLLAMA.generate_json(system, user_prompt),
+                text = await asyncio.wait_for(
+                    OLLAMA.generate_text(system, user_prompt),
                     timeout=CFG.ollama_timeout + 2,
                 )
         except asyncio.TimeoutError:
             log.warning("Ollama (chat) timed out")
+            text = None
+
+        if not text:
+            log.warning("Chat generation failed; sending visible fallback")
+            try:
+                await message.channel.send(
+                    f"{message.author.mention} I couldn't form a reply just now. Please try again.",
+                    reference=message,
+                    mention_author=False,
+                )
+            except discord.DiscordException as e:
+                log.warning("chat fallback failed: %s", e)
             return
 
-        if not isinstance(result, dict):
-            return
-        
-        # Handle dynamic mood switching from chat
-        self._apply_mood_switch(result)
-        
-        text = str(result.get("message", "")).strip()
-        if not text:
-            return
         text = text[:1800]
 
         try:
             await send_with_extras(
                 message.channel,
                 text,
-                result,
+                {},
                 cfg=CFG,
                 reference=message,
                 mention_author=False,

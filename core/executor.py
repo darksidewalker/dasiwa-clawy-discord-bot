@@ -103,6 +103,30 @@ async def execute(
         )
         return f"flagged for {act} (human review required)"
 
+    # Ambiguous or malformed model output is never executed. Surface it to
+    # moderators as a review request instead.
+    if act == "review":
+        strikes = await STORE.count_strikes(
+            message.author.id, CFG.mod.get("strike_window_hours", 24)
+        )
+        await _log_action(
+            guild,
+            f"🚩 **Moderation review requested** | #{message.channel.name}\n"
+            f"👤 {message.author.mention} (`{message.author.id}`)\n"
+            f"📋 Reason: {reason or 'ambiguous model decision'}\n"
+            f"📊 {_strike_summary(strikes)}\n"
+            f"💬 Message: `{message.content[:200]}`"
+        )
+        await STORE.log_mod_event(
+            user_id=message.author.id,
+            kind="flagged_for_review",
+            reason=reason or "ambiguous model decision",
+            source=source,
+            channel_id=message.channel.id,
+            message_id=message.id,
+        )
+        return "flagged for human review"
+
     # Gate: action not in allowed list → ignore silently
     if act not in CFG.allowed_actions and act not in {"reply", "ignore"}:
         log.info("action %s not in allowed_actions — ignoring", act)

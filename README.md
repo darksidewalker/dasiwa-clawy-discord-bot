@@ -80,14 +80,14 @@ Pull the official image from Docker Hub or build locally:
 
 **Using pre-built image (recommended):**
 ```bash
-docker pull darksidewalker/dasiwa-clawy-discord-bot:1.2.2
+docker pull darksidewalker/dasiwa-clawy-discord-bot:1.3.0
 cp .env.example .env
 $EDITOR .env            # paste DISCORD_TOKEN
 docker compose up -d clawy
 docker compose logs -f clawy
 ```
 
-Tags available: `1.2.2` (current release), `latest`
+Tags available: `1.3.0` (current release), `latest`
 
 **Building locally:**
 ```bash
@@ -323,32 +323,27 @@ Pre-filter (fast, no LLM)
   ▼
 Ollama LLM
   Sees: message, author, channel, recent context, strike count
-  Returns: a JSON action object
+  Returns: one terminal FINAL_DECISION marker (IGNORE/REPLY/WARN/REVIEW)
   │
   ▼
-Executor (guardrails)
-  Validates against allowed_actions, protected roles, hierarchy, timeout cap
+Python policy + executor (guardrails)
+  Rejects malformed/ambiguous output as REVIEW
+  Keeps punishment parameters and escalation deterministic
   Logs every action to SQLite + the log channel
 ```
 
-### Actions the LLM can choose autonomously
+### Decisions the LLM can return
 
-| Action         | Effect |
-|----------------|---|
-| `ignore`       | Nothing. Message passes through. |
-| `reply`        | Clawy responds in character. |
-| `warn`         | Warning posted in channel. Strike added. |
-| `delete`       | Message deleted. Strike added. User is DM'd and a short notice is posted in the channel (configurable — see [User notifications](#user-notifications-on-delete--move--purge)). |
-| `timeout`      | User muted. Clamped to `max_autonomous_timeout_seconds` (default 10 min). |
-| `assign_role`  | Adds a named role. |
-| `remove_role`  | Removes a named role. |
+| Decision | Effect |
+|----------|---|
+| `IGNORE` | Nothing. Message passes through. |
+| `REPLY`  | A separate plain-text call generates a conversational response. |
+| `WARN`   | A separate plain-text call generates a warning; Python records the strike. |
+| `REVIEW` | No punishment. The message is logged for human review. |
 
-**Intentionally unavailable to the LLM:**
-- `kick` — flagged for human review instead
-- `ban` — flagged for human review instead
-
-If the LLM picks kick or ban, the executor blocks it and logs a recommendation in
-the admin log channel. You execute manually with `!kick @user` or `!ban @user`.
+The model cannot directly select deletion, timeout duration, role changes, kick,
+or ban. Blocklist, spam deletion, and timeout escalation are deterministic Python
+rules. Unsupported, missing, or ambiguous model output becomes `REVIEW`.
 
 ### Strike system
 
@@ -1055,9 +1050,9 @@ to the chat LLM.
 
 Clawy uses Discord slash commands. Set `guild_id` to sync them immediately to one server on startup. Without it, Discord global propagation can take up to one hour.
 
-Prefix commands are disabled by default (`command_prefix: ""`). Slash commands: `/pause`, `/resume`, `/mode`, `/persona`, `/mood`, `/model`, `/think`, `/diagnostics`, `/strikes`, `/whois`, `/kick`, `/ban`, `/mute`, `/unmute`, `/purge`, `/purge-user`, `/move-last`, `/sleep`, `/wake`, `/roles`, `/quiet`, `/chat-roles`, `/proactive`.
+Prefix commands are disabled by default (`command_prefix: ""`). Slash commands: `/pause`, `/resume`, `/mode`, `/persona`, `/mood`, `/model`, `/think`, `/diagnostics`, `/strikes`, `/whois`, `/kick`, `/ban`, `/mute`, `/unmute`, `/purge`, `/purge-user`, `/move-last`, `/sleep`, `/wake`, `/roles`, `/quiet`, `/chat-roles`, `/proactive`, `/jumpin`.
 
-Right-click a message, then choose **Apps**: **Move message** selects a destination channel; **Delete message** deletes that message with normal user notification and audit logging. Both require moderator permission.
+Right-click a message, then choose **Apps**: **Move message** selects a destination channel; **Delete message** deletes that message with normal user notification and audit logging; **Clawy jump in** makes Clawy respond to the five most recent messages in that channel. Move and delete require moderator permission; jump-in requires owner or Administrator permission.
 
 Admin commands require `owner_id` or Discord Administrator permission. Moderation commands require `permissions.mod_roles`, or Manage Messages/Moderate Members when no moderator roles are configured. Responses are ephemeral unless sent to the configured log channel.
 
@@ -1285,7 +1280,9 @@ ollama:
   num_predict: 320             # max tokens generated per response
   timeout_seconds: 60          # API request timeout
   think: false                 # internal reasoning trace; false = faster
-  use_json_format: true        # forces valid JSON output
+
+# LLM output is plain text. Moderation accepts only a terminal
+# FINAL_DECISION marker and validates all actions in Python.
 
 # ── Moderation ───────────────────────────────────────────────────────
 moderation:

@@ -226,9 +226,28 @@ class SlashCog(commands.Cog):
             rolename=role.name if role else "", admin=True,
         )
 
+    @app_commands.command(description="Make Clawy join the recent channel conversation.")
+    async def jumpin(
+        self,
+        interaction: discord.Interaction,
+        count: int = 5,
+    ) -> None:
+        await self._run(interaction, "jumpin", max(1, min(count, 20)), admin=True)
+
     @app_commands.command(description="Set proactive reply chance (0 disables).")
     async def proactive(self, interaction: discord.Interaction, chance: app_commands.Range[float, 0, 1]) -> None:
         await self._run(interaction, "proactive", str(chance), admin=True)
+
+    async def jump_in_here(
+        self, interaction: discord.Interaction, message: discord.Message
+    ) -> None:
+        # The selected message identifies the channel and gives the action a
+        # natural home in Discord's Apps menu. The existing handler reads the
+        # five most recent conversational messages from that channel.
+        if interaction.channel_id != message.channel.id:
+            await interaction.response.send_message("Message channel mismatch.", ephemeral=True)
+            return
+        await self._run(interaction, "jumpin", 5, admin=True)
 
     async def delete_message(self, interaction: discord.Interaction, message: discord.Message) -> None:
         context = await self._context(interaction, admin=False)
@@ -261,3 +280,4 @@ async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(slash)
     bot.tree.add_command(app_commands.ContextMenu(name="Delete message", callback=slash.delete_message))
     bot.tree.add_command(app_commands.ContextMenu(name="Move message", callback=slash.move_message))
+    bot.tree.add_command(app_commands.ContextMenu(name="Clawy jump in", callback=slash.jump_in_here))

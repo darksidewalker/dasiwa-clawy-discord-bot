@@ -26,9 +26,10 @@ Prefilter (Python — no LLM)
   └─ Pass → LLM moderation (if Ollama is reachable)
       ↓
 LLM Moderation (Ollama)
-  Returns: JSON action object
+  Returns one terminal FINAL_DECISION marker
       ↓
-Executor (Python guardrails)
+Python policy + executor
+  Malformed/ambiguous output → human review
   Validates, enforces limits, logs
       ↓
 Discord API execution

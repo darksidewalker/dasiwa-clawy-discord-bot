@@ -20,8 +20,8 @@ def test_slash_cog_registers_supported_commands():
             assert {
                 "pause", "resume", "mode", "kick", "ban", "mute", "unmute",
                 "purge", "purge-user", "move-last", "sleep", "wake", "roles",
-                "quiet", "chat-roles", "proactive", "role-check", "role-grants", "role-reset",
-                "Move message", "Delete message",
+                "quiet", "chat-roles", "proactive", "jumpin", "role-check", "role-grants", "role-reset",
+                "Move message", "Delete message", "Clawy jump in",
             } <= names
         finally:
             await bot.close()

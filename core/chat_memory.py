@@ -177,7 +177,7 @@ async def summarize_old_chat_turns(user_id: int) -> bool:
     system = (
         "You compress Discord chat memory for a persona bot. "
         "Use only the supplied chat memory. Do not invent facts. "
-        "Return only JSON."
+        "Return only the compact summary in plain text, without JSON or metadata."
     )
     user = (
         "Update the long-term chat summary for this one user.\n"
@@ -188,21 +188,19 @@ async def summarize_old_chat_turns(user_id: int) -> bool:
         "- Keep it compact and useful for future replies.\n\n"
         f"Existing summary:\n{existing_summary or '(none)'}\n\n"
         f"Older turns to merge:\n{turn_lines}\n\n"
-        'Output JSON exactly like: {"summary": "compact memory summary"}'
+        "Return only the updated compact memory summary."
     )
 
     try:
-        result = await asyncio.wait_for(
-            OLLAMA.generate_json(system, user),
+        summary = await asyncio.wait_for(
+            OLLAMA.generate_text(system, user),
             timeout=CFG.ollama_timeout + 2,
         )
     except asyncio.TimeoutError:
         log.warning("chat summarization timed out")
         return False
 
-    if not isinstance(result, dict):
-        return False
-    summary = str(result.get("summary") or "").strip()
+    summary = summary.strip() if summary else ""
     if not summary:
         return False
 
