@@ -8,6 +8,9 @@ from discord.ext import commands
 from core.config import CFG
 from ._common import _resolve_mod_roles, is_admin_member, is_mod_member
 
+import logging
+log = logging.getLogger(__name__)
+
 
 class MoveDestinationView(discord.ui.View):
     def __init__(self, slash: "SlashCog", message: discord.Message) -> None:
@@ -246,6 +249,48 @@ class SlashCog(commands.Cog):
     async def analyze(self, interaction: discord.Interaction) -> None:
         await self._media_action(interaction, "analyze", admin=False)
 
+    @staticmethod
+    def _is_valid_image(data: bytes) -> bool:
+        """Check magic bytes for common image formats."""
+        from core.vision import _is_valid_image as vision_is_valid
+        return vision_is_valid(data)
+
+    async def _download_image_url(self, url: str) -> str | None:
+        """Download an image from a URL and return base64, or None on failure."""
+        from core.vision import _download_url, max_image_bytes, _is_valid_image
+        data = await _download_url(url, max_image_bytes())
+        if not data or not _is_valid_image(data):
+            return None
+        import base64
+        return base64.b64encode(data).decode("utf-8")
+
+    async def _extract_images_from_message(self, message: discord.Message) -> list[str]:
+        """Extract base64 images from a message's attachments and embeds."""
+        from core.vision import vision_enabled, fetch_attachment_image
+        downloaded: list[str] = []
+        
+        # Try file attachments first
+        for att in message.attachments[:4]:
+            img = await fetch_attachment_image(att)
+            if img:
+                downloaded.append(img)
+        
+        # Fall back to embed images if no attachments worked
+        if not downloaded and vision_enabled():
+            for emb in message.embeds[:2]:
+                url = None
+                if emb.image and emb.image.url:
+                    url = emb.image.url
+                elif emb.thumbnail and emb.thumbnail.url:
+                    url = emb.thumbnail.url
+                if not url:
+                    continue
+                img = await self._download_image_url(url)
+                if img:
+                    downloaded.append(img)
+        
+        return downloaded[:4]
+
     async def _media_action(
         self, interaction: discord.Interaction, action: str, *, admin: bool = True
     ) -> None:
@@ -280,35 +325,12 @@ class SlashCog(commands.Cog):
                 f"What's happening? Comment on it naturally."
             )
         # Delegate to the chat handler with vision
-        from core.vision import vision_enabled, fetch_attachment_image
+        from core.vision import vision_enabled
         from core.ollama_client import OLLAMA
         from core.prompts import build_chat_system_prompt
         images = None
         if vision_enabled():
-            downloaded = []
-            for att in target.attachments[:4]:
-                img = await fetch_attachment_image(att)
-                if img:
-                    downloaded.append(img)
-            # Also try embed images
-            if not downloaded and target.embeds:
-                for emb in target.embeds[:2]:
-                    url = None
-                    if emb.image and emb.image.url:
-                        url = emb.image.url
-                    elif emb.thumbnail and emb.thumbnail.url:
-                        url = emb.thumbnail.url
-                    if url:
-                        try:
-                            import aiohttp
-                            async with aiohttp.ClientSession() as session:
-                                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                                    if resp.status == 200 and len(await resp.read()) < 5 * 1024 * 1024:
-                                        import base64
-                                        data = await resp.read()
-                                        downloaded.append(base64.b64encode(data).decode("utf-8"))
-                        except Exception:
-                            pass
+            downloaded = await self._extract_images_from_message(target)
             if downloaded:
                 images = downloaded
         system = build_chat_system_prompt(
@@ -375,35 +397,12 @@ class SlashCog(commands.Cog):
                 f"Describe and analyze this media in detail. What do you see? "
                 f"What's happening? Comment on it naturally."
             )
-        from core.vision import vision_enabled, fetch_attachment_image
+        from core.vision import vision_enabled
         from core.ollama_client import OLLAMA
         from core.prompts import build_chat_system_prompt
         images = None
         if vision_enabled():
-            downloaded = []
-            for att in message.attachments[:4]:
-                img = await fetch_attachment_image(att)
-                if img:
-                    downloaded.append(img)
-            # Also try embed images
-            if not downloaded and message.embeds:
-                for emb in message.embeds[:2]:
-                    url = None
-                    if emb.image and emb.image.url:
-                        url = emb.image.url
-                    elif emb.thumbnail and emb.thumbnail.url:
-                        url = emb.thumbnail.url
-                    if url:
-                        try:
-                            import aiohttp
-                            async with aiohttp.ClientSession() as session:
-                                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                                    if resp.status == 200 and len(await resp.read()) < 5 * 1024 * 1024:
-                                        import base64
-                                        data = await resp.read()
-                                        downloaded.append(base64.b64encode(data).decode("utf-8"))
-                        except Exception:
-                            pass
+            downloaded = await self._extract_images_from_message(message)
             if downloaded:
                 images = downloaded
         system = build_chat_system_prompt(
