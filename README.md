@@ -1276,7 +1276,6 @@ ollama:
   temperature: 0.85            # randomness; 0.6–0.9 is sane for chat
   num_ctx: 4096                # context window in tokens
   num_thread: 6                # CPU threads (match physical cores)
-  f16_kv: false                # KV cache precision; false saves RAM
   num_predict: 320             # max tokens generated per response
   timeout_seconds: 60          # API request timeout
   think: false                 # internal reasoning trace; false = faster
@@ -1368,6 +1367,11 @@ chat:
     start: "22:00"             # HH:MM, 24h
     end:   "07:00"             # wraps midnight correctly
 ```
+
+> **Ollama KV cache:** cache quantization is configured on the Ollama server,
+> not in this bot's request options. Set `OLLAMA_FLASH_ATTENTION=1` and
+> `OLLAMA_KV_CACHE_TYPE=q8_0` on the Ollama service, then restart Ollama.
+> Current Ollama releases reject the old `f16_kv` request option.
 
 `.env`:
 

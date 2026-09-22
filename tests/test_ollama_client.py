@@ -6,6 +6,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core.ollama_client import OllamaClient
 
 
+def test_plain_payload_explicitly_disables_thinking() -> None:
+    payload = OllamaClient._build_payload("system", "user", think=False)
+    assert payload["think"] is False
+    assert "f16_kv" not in payload["options"]
+
+
 def test_clean_text_preserves_plain_response() -> None:
     assert OllamaClient._clean_text("Hello there.") == "Hello there."
 

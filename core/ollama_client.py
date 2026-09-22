@@ -33,25 +33,28 @@ class OllamaClient:
             log.warning("Ollama health check failed: %s", e)
             return False
 
-    async def generate_text(self, system: str, user: str) -> str | None:
-        """Generate an ordinary text response without requiring structured output."""
-        payload: dict[str, object] = {
+    @staticmethod
+    def _build_payload(system: str, user: str, *, think: bool) -> dict[str, object]:
+        """Build a plain-text request with thinking explicitly controlled."""
+        return {
             "model": CFG.model,
             "stream": False,
+            "think": think,
             "options": {
                 "temperature": CFG.temperature,
                 "num_ctx": CFG.num_ctx,
                 "num_predict": CFG.num_predict,
                 "num_thread": CFG.num_thread,
-                "f16_kv": CFG.f16_kv,
             },
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         }
-        if CFG.think:
-            payload["think"] = True
+
+    async def generate_text(self, system: str, user: str) -> str | None:
+        """Generate an ordinary text response without requiring structured output."""
+        payload = self._build_payload(system, user, think=CFG.think)
         try:
             s = await self._ensure_session()
             async with s.post(
