@@ -389,6 +389,18 @@ class SlashCog(commands.Cog):
     async def react_to_message(
         self, interaction: discord.Interaction, message: discord.Message
     ) -> None:
+        # Context menu interactions may provide a Message without attachments populated.
+        # If no attachments are visible, fetch the full message by ID.
+        if not message.attachments and interaction.channel_id == message.channel.id:
+            try:
+                channel = interaction.guild.get_channel(interaction.channel_id)
+                if channel:
+                    full_msg = await channel.fetch_message(message.id)
+                    if full_msg.attachments:
+                        message = full_msg
+            except discord.DiscordException:
+                pass  # fall through with original message
+
         if not self._has_media(message):
             await interaction.response.send_message("Message has no media.", ephemeral=True)
             return
@@ -397,6 +409,17 @@ class SlashCog(commands.Cog):
     async def analyze_message(
         self, interaction: discord.Interaction, message: discord.Message
     ) -> None:
+        # Context menu interactions may provide a Message without attachments populated.
+        if not message.attachments and interaction.channel_id == message.channel.id:
+            try:
+                channel = interaction.guild.get_channel(interaction.channel_id)
+                if channel:
+                    full_msg = await channel.fetch_message(message.id)
+                    if full_msg.attachments:
+                        message = full_msg
+            except discord.DiscordException:
+                pass
+
         if not self._has_media(message):
             await interaction.response.send_message("Message has no media.", ephemeral=True)
             return
