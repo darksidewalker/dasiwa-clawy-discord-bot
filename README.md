@@ -425,6 +425,22 @@ You can also force her to jump in immediately with `!jumpin` (see section 15).
 
 ---
 
+## Vision support
+
+When using a multimodal model (Gemma 4, Qwen2-VL, etc.), Clawy can analyze images posted in Discord. Enable via config:
+
+```yaml
+vision:
+  enabled: true
+  max_bytes: 5242880    # optional, default 5 MB
+```
+
+Clawy downloads image attachments through Discord's resized CDN proxy (~80 KB WebP) and passes them to Ollama. She reacts in character to what she sees — memes, screenshots, art.
+
+**Requirements:** Your Ollama model must support vision (e.g. `gemma4:12b`, `qwen2-vl`). Non-vision models will ignore the images.
+
+---
+
 ## 10. Activity-based roles
 
 Clawy automatically grants Discord roles based on user activity. Rules live in
@@ -1309,6 +1325,11 @@ moderation:
 # Even when the LLM picks "timeout", it is clamped to this maximum.
 # Longer mutes require a human via !mute @user <duration>.
 max_autonomous_timeout_seconds: 600
+
+# ── Vision (multimodal image analysis) ───────────────────────────────
+vision:
+  enabled: false               # true = analyze image attachments
+  max_bytes: 5242880           # max download size per attachment (default 5 MB)
 
 # ── Move command ─────────────────────────────────────────────────────
 move:

@@ -34,8 +34,11 @@ class OllamaClient:
             return False
 
     @staticmethod
-    def _build_payload(system: str, user: str, *, think: bool) -> dict[str, object]:
+    def _build_payload(system: str, user: str, *, think: bool, images: list[str] | None = None) -> dict[str, object]:
         """Build a plain-text request with thinking explicitly controlled."""
+        user_msg: dict[str, object] = {"role": "user", "content": user}
+        if images:
+            user_msg["images"] = images
         return {
             "model": CFG.model,
             "stream": False,
@@ -50,13 +53,13 @@ class OllamaClient:
             },
             "messages": [
                 {"role": "system", "content": system},
-                {"role": "user", "content": user},
+                user_msg,
             ],
         }
 
-    async def generate_text(self, system: str, user: str) -> str | None:
+    async def generate_text(self, system: str, user: str, images: list[str] | None = None) -> str | None:
         """Generate an ordinary text response without requiring structured output."""
-        payload = self._build_payload(system, user, think=CFG.think)
+        payload = self._build_payload(system, user, think=CFG.think, images=images)
         try:
             s = await self._ensure_session()
             async with s.post(

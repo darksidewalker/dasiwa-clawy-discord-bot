@@ -40,6 +40,7 @@ from core.prefilter import prefilter
 from core.prompts import build_chat_system_prompt
 from core.store import STORE
 from core.tracking import MENTION_RL, SPAM
+from core.vision import vision_enabled, fetch_attachment_image, has_image_attachments
 
 log = logging.getLogger(__name__)
 
@@ -486,6 +487,18 @@ class ModerationCog(commands.Cog):
             structured_output=False,
         )
 
+        # Vision: download image attachments and pass to Ollama
+        images: list[str] | None = None
+        if vision_enabled() and has_image_attachments(message):
+            downloaded: list[str] = []
+            for att in message.attachments:
+                img = await fetch_attachment_image(att)
+                if img:
+                    downloaded.append(img)
+            if downloaded:
+                images = downloaded[:4]  # cap at 4 images per message
+                system += "\n\nThe user sent image(s). Describe what you see and react naturally in character."
+
         memory_packet = await build_chat_memory_packet(
             message.author.id,
             recent_limit=CFG.chat_context_turns,
@@ -516,7 +529,7 @@ class ModerationCog(commands.Cog):
         try:
             async with message.channel.typing():
                 text = await asyncio.wait_for(
-                    OLLAMA.generate_text(system, user_prompt),
+                    OLLAMA.generate_text(system, user_prompt, images=images),
                     timeout=CFG.ollama_timeout + 2,
                 )
         except asyncio.TimeoutError:

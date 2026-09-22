@@ -163,6 +163,11 @@ allowed_actions:
 # Longer mutes require a human via !mute @user <duration>.
 max_autonomous_timeout_seconds: 600   # 10 minutes hard cap
 
+# Vision: enable image analysis via multimodal models (Gemma 4, Qwen2-VL, etc.)
+vision:
+  enabled: false             # Set true when using a vision-capable model
+  max_bytes: 5242880         # Max download size per attachment (default 5 MB)
+
 chat:
   # Role allowlist — which roles can chat with Clawy.
   #
