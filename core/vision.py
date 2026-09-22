@@ -1,6 +1,7 @@
 """Download Discord attachments for vision models via the resized CDN proxy."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 
@@ -41,51 +42,81 @@ def _is_valid_image(data: bytes) -> bool:
 
 
 async def _download_url(url: str, max_bytes: int) -> bytes | None:
-    """Download a URL with size limit. Returns bytes or None on failure."""
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status != 200:
-                    log.debug("vision: HTTP %s for %s", resp.status, url)
-                    return None
+    """Download a URL with size limit and retry logic. Returns bytes or None."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; ClawyBot/1.0)",
+        "Accept": "image/*,*/*",
+    }
+    
+    for attempt in range(3):
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status != 200:
+                        log.warning("vision: HTTP %s for %s (attempt %d/3)", resp.status, url, attempt + 1)
+                        if attempt < 2:
+                            await asyncio.sleep(1 * (attempt + 1))
+                        continue
 
-                content = bytearray()
-                async for chunk in resp.content.iter_chunked(8192):
-                    content.extend(chunk)
-                    if len(content) > max_bytes:
-                        log.warning("vision: download too large, aborting")
+                    content = bytearray()
+                    async for chunk in resp.content.iter_chunked(8192):
+                        content.extend(chunk)
+                        if len(content) > max_bytes:
+                            log.warning("vision: download too large (%d bytes), aborting", len(content))
+                            return None
+
+                    data = bytes(content)
+                    # Detect Discord CDN JSON error responses (e.g. invalid/expired attachment ID)
+                    if data[:1] == b'{' and b'"code"' in data:
+                        try:
+                            import json
+                            err = json.loads(data.decode('utf-8', errors='ignore'))
+                            log.warning("vision: Discord CDN error for %s: code=%s message=%s", url, err.get('code'), err.get('message'))
+                        except Exception:
+                            pass
                         return None
 
-                return bytes(content)
-    except Exception as e:
-        log.debug("vision: failed to download %s: %s", url, e)
-        return None
+                    if not _is_valid_image(data):
+                        log.debug("vision: downloaded %d bytes from %s but magic bytes don't match an image format", len(data), url)
+                    return data
+        except Exception as e:
+            log.warning("vision: failed to download %s (attempt %d/3): %s", url, attempt + 1, e)
+            if attempt < 2:
+                await asyncio.sleep(1 * (attempt + 1))
+    
+    return None
 
 
 async def fetch_attachment_image(attachment: discord.Attachment) -> str | None:
-    """Download an attachment via Discord's resized proxy, return base64.
+    """Download an attachment, trying multiple URL strategies for reliability.
 
-    Uses ?width=896&height=896&format=webp to keep bandwidth low (~80 KB).
-    If the proxy produces an invalid image, falls back to original format.
-    Returns None on any failure (wrong type, too large, network error).
+    Strategy order: original URL first (most reliable), then CDN proxy with resize.
+    Returns base64-encoded image or None on failure.
     """
     ext = attachment.filename.rsplit(".", 1)[-1].lower() if "." in attachment.filename else ""
     if ext not in IMAGE_EXTENSIONS:
         return None
 
-    # Try Discord CDN proxy with resize params first — keeps download tiny
+    # Strategy 1: Original attachment URL (most reliable, full size)
+    data = await _download_url(attachment.url, max_image_bytes())
+    if data and _is_valid_image(data):
+        return base64.b64encode(data).decode("ascii")
+
+    # Strategy 2: Discord CDN proxy with resize params (smaller download)
+    log.debug("vision: original URL failed/invalid, trying CDN proxy for %s", attachment.filename)
     proxy_url = f"{attachment.url}?width=896&height=896&format=webp"
     data = await _download_url(proxy_url, max_image_bytes())
     if data and _is_valid_image(data):
         return base64.b64encode(data).decode("ascii")
 
-    # Proxy produced invalid image (e.g. broken WebP conversion of GIF) — fall back to original
-    log.debug("vision: proxy image invalid, falling back to original for %s", attachment.filename)
-    data = await _download_url(attachment.url, max_image_bytes())
-    if data and _is_valid_image(data):
-        return base64.b64encode(data).decode("ascii")
+    # Strategy 3: Discord proxy_url attribute (different CDN endpoint)
+    if hasattr(attachment, "proxy_url") and attachment.proxy_url:
+        log.debug("vision: trying proxy_url for %s", attachment.filename)
+        data = await _download_url(attachment.proxy_url, max_image_bytes())
+        if data and _is_valid_image(data):
+            return base64.b64encode(data).decode("ascii")
 
-    log.warning("vision: could not fetch valid image from %s", attachment.filename)
+    log.warning("vision: all download strategies failed for %s", attachment.filename)
     return None
 
 

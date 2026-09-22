@@ -271,9 +271,13 @@ class SlashCog(commands.Cog):
         
         # Try file attachments first
         for att in message.attachments[:4]:
+            ext = att.filename.rsplit(".", 1)[-1].lower() if "." in att.filename else ""
+            log.info("vision: trying attachment %s (ext=%s, size=%d)", att.filename, ext, att.size)
             img = await fetch_attachment_image(att)
             if img:
                 downloaded.append(img)
+            else:
+                log.warning("vision: failed to extract image from attachment %s", att.filename)
         
         # Fall back to embed images if no attachments worked
         if not downloaded and vision_enabled():
@@ -285,9 +289,12 @@ class SlashCog(commands.Cog):
                     url = emb.thumbnail.url
                 if not url:
                     continue
+                log.info("vision: trying embed image URL %s", url)
                 img = await self._download_image_url(url)
                 if img:
                     downloaded.append(img)
+                else:
+                    log.warning("vision: failed to download embed image from %s", url)
         
         return downloaded[:4]
 
@@ -331,7 +338,15 @@ class SlashCog(commands.Cog):
             return
         downloaded = await self._extract_images_from_message(target)
         if not downloaded:
-            await interaction.followup.send("Could not extract an image from that message (video, broken link, or download failed).", ephemeral=True)
+            # Provide specific reason based on what was in the message
+            has_video = any(att.filename.lower().endswith(('.mp4', '.webm', '.mov')) for att in target.attachments)
+            if has_video:
+                msg = "That message contains a video, which I can't process yet."
+            elif target.attachments:
+                msg = "The attachment(s) in that message aren't images I can process."
+            else:
+                msg = "Could not extract an image from that message (broken link or download failed)."
+            await interaction.followup.send(msg, ephemeral=True)
             return
         images = downloaded
         system = build_chat_system_prompt(
@@ -352,14 +367,23 @@ class SlashCog(commands.Cog):
             await interaction.followup.send(f"Failed: {e}", ephemeral=True)
 
     def _has_media(self, message: discord.Message) -> bool:
-        """Check if a message contains any media (attachments or embeds with images)."""
-        if message.attachments:
-            return True
+        """Check if a message contains processable images (not just any attachment)."""
+        from core.vision import IMAGE_EXTENSIONS
+        # Check attachments for actual image extensions
+        for att in message.attachments:
+            ext = att.filename.rsplit(".", 1)[-1].lower() if "." in att.filename else ""
+            if ext in IMAGE_EXTENSIONS:
+                return True
+        # Embeds with direct image URLs are processable (handle query params)
+        import urllib.parse
         for emb in message.embeds:
-            if emb.image and emb.image.url:
-                return True
-            if emb.thumbnail and emb.thumbnail.url:
-                return True
+            for attr in ("image", "thumbnail"):
+                obj = getattr(emb, attr)
+                if obj and obj.url:
+                    parsed = urllib.parse.urlparse(obj.url)
+                    path = parsed.path.lower()
+                    if any(path.endswith(e) for e in IMAGE_EXTENSIONS):
+                        return True
         return False
 
     async def react_to_message(
