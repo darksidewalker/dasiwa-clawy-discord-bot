@@ -257,6 +257,21 @@ class ModerationCog(commands.Cog):
                 log.info("Direct chat skipped: quiet hours active.")
                 return
 
+        # ========== PROACTIVE MEDIA REACTION ==========
+        # If someone posts media and vision is enabled, roll the dice to react.
+        # Same chance/cooldown as other proactive replies.
+        if (vision_enabled() and has_image_attachments(message)
+                and CFG.chat_enabled and not in_quiet_hours()
+                and is_chat_allowed(message.author)):
+            chance = CFG.proactive_reply_chance
+            cooldown = float(CFG.mod.get("proactive_reply_cooldown_seconds", 300))
+            last = self._last_proactive.get(message.channel.id, 0.0)
+            cooldown_ok = time.time() - last > cooldown
+            if (random.random() < chance) or (cooldown_ok and not message.content.strip()):
+                log.info("proactive media reaction triggered for %s", message.author.display_name)
+                await self._chat(message)
+                return
+
         # ========== MODERATION LLM PATH ==========
         if CFG.moderation_enabled and decision == "llm":
                 # NSFW channels: skip the moderation LLM entirely.

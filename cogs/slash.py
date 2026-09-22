@@ -236,16 +236,16 @@ class SlashCog(commands.Cog):
 
     @app_commands.command(description="Make Clawy react in character to recent media.")
     async def react(self, interaction: discord.Interaction) -> None:
-        await self._media_action(interaction, "react")
+        await self._media_action(interaction, "react", admin=False)
 
     @app_commands.command(description="Have Clawy analyze and describe recent media.")
     async def analyze(self, interaction: discord.Interaction) -> None:
-        await self._media_action(interaction, "analyze")
+        await self._media_action(interaction, "analyze", admin=False)
 
     async def _media_action(
-        self, interaction: discord.Interaction, action: str
+        self, interaction: discord.Interaction, action: str, *, admin: bool = True
     ) -> None:
-        context = await self._context(interaction, admin=True)
+        context = await self._context(interaction, admin=admin)
         if context is None:
             return
         channel = interaction.channel
