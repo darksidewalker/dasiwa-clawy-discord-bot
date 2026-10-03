@@ -132,7 +132,9 @@ def format_turns(turns: Iterable[dict], *, max_chars: int = 260) -> list[str]:
     return lines
 
 
-async def build_chat_memory_packet(user_id: int, *, recent_limit: int) -> str:
+async def build_chat_memory_packet(
+    user_id: int, *, recent_limit: int, channel_id: int | None = None
+) -> str:
     """Build the memory section handed to the main chat LLM."""
     parts: list[str] = []
 
@@ -145,10 +147,10 @@ async def build_chat_memory_packet(user_id: int, *, recent_limit: int) -> str:
             f"{str(summary['summary'])[:CFG.chat_summary_max_chars]}"
         )
 
-    recent = await STORE.recent_chat_turns(user_id, limit=recent_limit)
+    recent = await STORE.recent_chat_turns(user_id, limit=recent_limit, channel_id=channel_id)
     recent_lines = format_turns(recent)
     parts.append(
-        "Recent raw turns (highest priority, chronological):\n"
+        "Historical raw turns (background only, chronological; not the current channel conversation):\n"
         + ("\n".join(recent_lines) if recent_lines else "(no prior conversation)")
     )
 

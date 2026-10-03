@@ -330,10 +330,18 @@ class Store:
             (int(time.time()), user_id, channel_id, role, content),
         )
 
-    async def recent_chat_turns(self, user_id: int, limit: int = 12) -> list[dict]:
+    async def recent_chat_turns(
+        self, user_id: int, limit: int = 12, *, channel_id: int | None = None
+    ) -> list[dict]:
+        where = "user_id = ?"
+        params: tuple = (user_id,)
+        if channel_id is not None:
+            where += " AND channel_id = ?"
+            params += (channel_id,)
         rows = await self._fetchall(
-            "SELECT id, role, content, ts, channel_id FROM chat_turns WHERE user_id = ? ORDER BY ts DESC LIMIT ?",
-            (user_id, limit),
+            f"SELECT id, role, content, ts, channel_id FROM chat_turns WHERE {where} "
+            "ORDER BY ts DESC, id DESC LIMIT ?",
+            params + (limit,),
         )
         # reverse so it's chronological
         return list(reversed([dict(r) for r in rows]))

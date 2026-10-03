@@ -94,7 +94,7 @@ async def fetch_attachment_image(attachment: discord.Attachment) -> str | None:
     Returns base64-encoded image or None on failure.
     """
     ext = attachment.filename.rsplit(".", 1)[-1].lower() if "." in attachment.filename else ""
-    if ext not in IMAGE_EXTENSIONS:
+    if f".{ext}" not in IMAGE_EXTENSIONS:
         return None
 
     # Strategy 1: Original attachment URL (most reliable, full size)
@@ -123,7 +123,7 @@ async def fetch_attachment_image(attachment: discord.Attachment) -> str | None:
 def has_image_attachments(message: discord.Message) -> bool:
     """Check if a message contains image attachments."""
     for att in message.attachments:
-        ext = att.filename.rsplit(".", 1)[-1].lower() if "." in att.filename else ""
+        ext = "." + att.filename.rsplit(".", 1)[-1].lower() if "." in att.filename else ""
         if ext in IMAGE_EXTENSIONS:
             return True
     return False

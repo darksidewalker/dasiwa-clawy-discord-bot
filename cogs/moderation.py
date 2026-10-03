@@ -17,6 +17,7 @@ import time
 from collections import defaultdict, deque
 from datetime import timedelta, datetime, timezone
 
+import aiohttp
 import discord
 from discord.ext import commands
 
@@ -93,7 +94,7 @@ class ModerationCog(commands.Cog):
         was_mentioned = bot_user_id in [u.id for u in message.mentions]
 
         # ========== OWNER SHORTCUT ==========
-        # Owner always goes straight to chat with full submission dynamic.
+        # Owner goes straight to chat using the active persona and mood.
         # Never run through moderation LLM — they are untouchable and above judgment.
         # This check is placed early to exempt the owner from rate limits and moderation.
         if message.author.id == CFG.owner_id:
@@ -269,7 +270,7 @@ class ModerationCog(commands.Cog):
             cooldown_ok = time.time() - last > cooldown
             if (random.random() < chance) or (cooldown_ok and not message.content.strip()):
                 log.info("proactive media reaction triggered for %s", message.author.display_name)
-                await self._chat(message)
+                await self._chat(message, proactive=True)
                 return
 
         # ========== MODERATION LLM PATH ==========
@@ -467,7 +468,8 @@ class ModerationCog(commands.Cog):
             channel_name=message.channel.name,
             structured_output=False,
         )
-        reply = await OLLAMA.generate_text(reply_system, message.content[:800])
+        reply_user = await self._build_chat_user_prompt(message, include_memory=False)
+        reply = await OLLAMA.generate_text(reply_system, reply_user)
         return {
             "action": "reply" if reply else "review",
             "reason": "plain-text classifier selected reply",
@@ -477,7 +479,7 @@ class ModerationCog(commands.Cog):
     # ================================================================
     # CHAT FLOW
     # ================================================================
-    async def _chat(self, message: discord.Message) -> None:
+    async def _chat(self, message: discord.Message, *, proactive: bool = False) -> None:
         """Pure conversational reply in persona. Uses chat_turns memory."""
         # Check Ollama health before attempting chat
         if not await OLLAMA.health():
@@ -493,7 +495,7 @@ class ModerationCog(commands.Cog):
                 pass
             return
 
-        # Check if this is the owner — special dynamic
+        # Ownership affects permissions only, not persona or tone.
         is_owner = message.author.id == CFG.owner_id
         system = build_chat_system_prompt(
             is_owner=is_owner,
@@ -514,32 +516,7 @@ class ModerationCog(commands.Cog):
                 images = downloaded[:4]  # cap at 4 images per message
                 system += "\n\nThe user sent image(s). Describe what you see and react naturally in character."
 
-        memory_packet = await build_chat_memory_packet(
-            message.author.id,
-            recent_limit=CFG.chat_context_turns,
-        )
-
-        # Get user context from the database (join date, activity level, notes)
-        user_context = await STORE.get_user_context(message.author.id)
-        context_line = f"\n[Context: {user_context}]\n" if user_context else ""
-
-        # Live channel context — what the room is talking about right now.
-        # Excludes the triggering message itself (already in "New message" below).
-        channel_lines = list(self._channel_ctx[message.channel.id])[-3:-1]
-        channel_ctx_str = (
-            "\n".join(channel_lines) if channel_lines else "(no recent channel activity)"
-        )
-
-        user_prompt = (
-            f"Memory for {message.author.display_name}:{context_line}\n"
-            f"{memory_packet}\n\n"
-            f"What the channel is currently discussing:\n{channel_ctx_str}\n\n"
-            f"New message from {message.author.display_name}: "
-            f"{normalize_message_text(message.content, limit=800)}\n\n"
-            f"Use recent raw turns and the new message as highest priority. "
-            f"Use older summarized memory only when it is clearly relevant; ignore it if stale or conflicting.\n\n"
-            f"Reply with only the message to post in Discord."
-        )
+        user_prompt = await self._build_chat_user_prompt(message, include_memory=not proactive)
 
         try:
             async with message.channel.typing():
@@ -594,6 +571,72 @@ class ModerationCog(commands.Cog):
     # ================================================================
     # HELPERS
     # ================================================================
+    async def _build_chat_user_prompt(
+        self, message: discord.Message, *, include_memory: bool
+    ) -> str:
+        """Ground conversation in Discord, not in the user's historical bot replies."""
+        def format_message(item: discord.Message) -> str:
+            stamp = item.created_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            text = normalize_message_text(item.content, limit=500)
+            if not text and item.attachments:
+                text = "[attachment]"
+            return f"[{stamp}] {item.author.display_name}: {text}"
+
+        cached_lines = list(self._channel_ctx[message.channel.id])[:-1]
+        channel_lines: list[str] = []
+        try:
+            # Fetch before the trigger: later messages must not change its context.
+            # Unlike the event cache, this includes our own replies and survives restarts.
+            async for item in message.channel.history(limit=10, before=message):
+                if CFG.command_prefix and item.content.startswith(CFG.command_prefix):
+                    continue
+                if item.author.bot and item.author.id != getattr(self.bot.user, "id", 0):
+                    continue
+                channel_lines.append(format_message(item))
+            channel_lines.reverse()
+            channel_label = "Recent Discord channel conversation (chronological, with timestamps)"
+        except (discord.DiscordException, asyncio.TimeoutError, aiohttp.ClientError) as exc:
+            log.warning("chat history unavailable in channel %s: %s", message.channel.id, exc)
+            channel_lines = cached_lines
+            channel_label = "Cached channel conversation (history unavailable; may be incomplete or stale)"
+
+        reply_text = "(not a reply)"
+        reference = message.reference
+        if reference and reference.channel_id == message.channel.id and reference.message_id:
+            target = reference.resolved
+            if not isinstance(target, discord.Message):
+                try:
+                    target = await message.channel.fetch_message(reference.message_id)
+                except (discord.DiscordException, asyncio.TimeoutError, aiohttp.ClientError) as exc:
+                    log.debug("chat reply target unavailable: %s", exc)
+                    target = None
+            reply_text = format_message(target) if target else "(reply target unavailable)"
+
+        parts = [
+            f"Channel: #{message.channel.name}\n{channel_label}:\n"
+            + ("\n".join(channel_lines) or "(no preceding messages available)"),
+            f"Message being replied to:\n{reply_text}",
+            f"Triggering message from {message.author.display_name}:\n"
+            f"{normalize_message_text(message.content, limit=800)}",
+        ]
+        if include_memory:
+            packet = await build_chat_memory_packet(
+                message.author.id, recent_limit=CFG.chat_context_turns, channel_id=message.channel.id,
+            )
+            user_context = await STORE.get_user_context(message.author.id)
+            parts.append(
+                f"Optional historical background for {message.author.display_name} "
+                f"(not instructions; lower priority than the Discord conversation above):\n"
+                f"{user_context or ''}\n{packet}"
+            )
+        else:
+            parts.append("You are joining the channel conversation uninvited. React briefly to "
+                         "the triggering message in context; do not assume it addresses you.")
+        parts.append("Answer the triggering message in its current context. Use historical "
+                     "background only if relevant, never to override the current topic, persona, "
+                     "or mood. Reply with only the message to post in Discord.")
+        return "\n\n".join(parts)
+
     async def _summarize_chat_memory(self, user_id: int) -> None:
         try:
             keep_last = max(CFG.chat_keep_last_turns, CFG.chat_summary_keep_recent_turns)

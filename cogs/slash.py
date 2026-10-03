@@ -371,7 +371,7 @@ class SlashCog(commands.Cog):
         from core.vision import IMAGE_EXTENSIONS
         # Check attachments for actual image extensions
         for att in message.attachments:
-            ext = att.filename.rsplit(".", 1)[-1].lower() if "." in att.filename else ""
+            ext = "." + att.filename.rsplit(".", 1)[-1].lower() if "." in att.filename else ""
             if ext in IMAGE_EXTENSIONS:
                 return True
         # Embeds with direct image URLs are processable (handle query params)
@@ -389,41 +389,42 @@ class SlashCog(commands.Cog):
     async def react_to_message(
         self, interaction: discord.Interaction, message: discord.Message
     ) -> None:
-        # Context menu interactions don't include attachment data — fetch full message
-        try:
-            channel = interaction.channel
-            if isinstance(channel, (discord.TextChannel, discord.Thread)):
-                full_msg = await channel.fetch_message(message.id)
-                message = full_msg
-        except discord.DiscordException as e:
-            log.warning("react_to_message: failed to fetch message %s: %s", message.id, e)
-
-        if not self._has_media(message):
-            await interaction.response.send_message("Message has no media.", ephemeral=True)
-            return
-        await self._media_action_on(interaction, message, "react")
+        await self._context_media_action(interaction, message, "react")
 
     async def analyze_message(
         self, interaction: discord.Interaction, message: discord.Message
     ) -> None:
-        # Context menu interactions don't include attachment data — fetch full message
-        try:
-            channel = interaction.channel
-            if isinstance(channel, (discord.TextChannel, discord.Thread)):
-                full_msg = await channel.fetch_message(message.id)
-                message = full_msg
-        except discord.DiscordException as e:
-            log.warning("analyze_message: failed to fetch message %s: %s", message.id, e)
+        await self._context_media_action(interaction, message, "analyze")
 
-        if not self._has_media(message):
-            await interaction.response.send_message("Message has no media.", ephemeral=True)
-            return
-        await self._media_action_on(interaction, message, "analyze")
-
-    async def _media_action_on(
+    async def _context_media_action(
         self, interaction: discord.Interaction, message: discord.Message, action: str
     ) -> None:
+        # Authorize and acknowledge before the network fetch, including in threads.
         context = await self._context(interaction, admin=True)
+        if context is None:
+            return
+        channel = interaction.channel
+        if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+            await interaction.followup.send("No channel found.", ephemeral=True)
+            return
+        try:
+            # Context-menu payloads can omit attachments; always fetch the target.
+            message = await channel.fetch_message(message.id)
+        except discord.DiscordException as exc:
+            log.warning("context media: failed to fetch message %s: %s", message.id, exc)
+            await interaction.followup.send("Could not read that message. Check access permissions.", ephemeral=True)
+            return
+        if not self._has_media(message):
+            await interaction.followup.send("Message has no media.", ephemeral=True)
+            return
+        await self._media_action_on(interaction, message, action, context=context)
+
+    async def _media_action_on(
+        self, interaction: discord.Interaction, message: discord.Message, action: str,
+        *, context: commands.Context | None = None,
+    ) -> None:
+        if context is None:
+            context = await self._context(interaction, admin=True)
         if context is None:
             return
         channel = interaction.channel
