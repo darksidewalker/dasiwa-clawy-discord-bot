@@ -83,6 +83,15 @@ ollama:
 
 # ---- Moderation ----
 moderation:
+  # Opt-in trap: any human post in this channel causes an immediate ban.
+  # Owner, server owner, and protected_roles are always exempt. No LLM.
+  # Exact channel ID; takes priority over ignored_channels/commands.
+  # Deletes new unprotected posts (other bots/webhooks: delete only, no ban).
+  # Owner/protected roles/Clawy posts stay. Needs Manage Messages in the trap.
+  # Paused/sleeping/chat_only disables enforcement. No old-message scanning.
+  honeypot_enabled: false
+  honeypot_channel_id: 0       # Right-click the trap channel -> Copy Channel ID
+
   # Prefilter catches: spam rate, ALL CAPS yelling, user ping spam, blocklist.
   # The LLM will ONLY see messages that pass those filters.
   # LLM rules: ignore normal chat, only warn on explicit rule-breaking.

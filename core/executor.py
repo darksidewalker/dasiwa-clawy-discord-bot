@@ -33,6 +33,10 @@ _MIN_TIMEOUT = 60
 
 
 def _is_protected(member: discord.Member) -> bool:
+    # Protect our own Discord identity, independent of configured roles.
+    me = member.guild.me
+    if me is not None and member.id == me.id:
+        return True
     if member.id == CFG.owner_id:
         return True
     if member.guild.owner_id == member.id:
@@ -349,6 +353,85 @@ async def execute(
     except Exception as e:
         log.exception("execute failed")
         return f"error: {e}"
+
+
+# ============================================================
+# DETERMINISTIC: explicitly configured honeypot rule (never LLM)
+# ============================================================
+
+async def execute_honeypot(message: discord.Message) -> str:
+    """Deterministic opt-in ban rule. Never reachable through LLM actions."""
+    guild = message.guild
+    member = message.author
+    if guild is None or (CFG.guild_id and guild.id != CFG.guild_id):
+        return "ignored"
+    if (not CFG.mod.get("honeypot_enabled", False)
+            or message.channel.id != CFG.mod.get("honeypot_channel_id", 0)
+            or not CFG.moderation_enabled or CFG.state.paused or CFG.state.sleeping):
+        return "ignored"
+    is_member = isinstance(member, discord.Member)
+    is_bot_post = member.bot or bool(getattr(message, "webhook_id", None))
+    if (member.id in {CFG.owner_id, guild.owner_id}
+            or (guild.me is not None and member.id == guild.me.id)
+            or (is_member and _is_protected(member))):
+        return "refused: member is protected"
+    # Human posts without member/role data fail closed to preserve exemptions.
+    if not is_member and not is_bot_post:
+        return "ignored"
+
+    reason = f"Honeypot channel post (channel {message.channel.id}, message {message.id})"
+    delete_failure = None
+    cleanup = "message deleted"
+    try:
+        await message.delete()
+    except discord.NotFound:
+        cleanup = "message already absent"
+    except discord.DiscordException as exc:
+        delete_failure = f"{type(exc).__name__}: {exc}"
+        cleanup = f"message delete FAILED: {delete_failure}"
+        log.warning("honeypot delete failed for message %s: %s", message.id, delete_failure)
+
+    # Other bots/webhooks are cleaned up, never banned by the trap.
+    if is_bot_post:
+        await STORE.log_mod_event(
+            user_id=member.id, kind="honeypot_delete_failed" if delete_failure else "delete",
+            reason=f"{reason} — {cleanup}", source="honeypot",
+            channel_id=message.channel.id, message_id=message.id,
+        )
+        await _log_action(
+            guild,
+            f"🧹 Honeypot bot/webhook cleanup\n"
+            f"👤 {member.mention} (`{member.id}`)\n📋 {reason}\n{cleanup}",
+        )
+        return "delete failed" if delete_failure else "deleted"
+
+    failure = None
+    if guild.me is None or not guild.me.guild_permissions.ban_members:
+        failure = "missing Ban Members permission"
+    elif guild.me.top_role <= member.top_role:
+        failure = "bot role must be above member's highest role"
+    else:
+        try:
+            await member.ban(reason=reason, delete_message_seconds=0)
+        except discord.DiscordException as exc:
+            failure = f"{type(exc).__name__}: {exc}"
+
+    await STORE.log_mod_event(
+        user_id=member.id, kind="honeypot_ban_failed" if failure else "ban",
+        reason=f"{reason} — {cleanup}" + (f" — {failure}" if failure else ""),
+        source="honeypot",
+        channel_id=message.channel.id, message_id=message.id,
+    )
+    await _log_action(
+        guild,
+        f"{'⚠️ Honeypot ban FAILED' if failure else '🔨 Banned (honeypot)'}\n"
+        f"👤 {member.mention} (`{member.id}`)\n"
+        f"📋 {reason}\n{cleanup}" + (f"\n{failure}" if failure else ""),
+    )
+    if failure:
+        log.warning("honeypot ban failed for %s: %s", member.id, failure)
+        return f"ban failed: {failure}"
+    return "banned"
 
 
 # ============================================================

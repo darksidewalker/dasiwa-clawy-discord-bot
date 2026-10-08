@@ -27,7 +27,7 @@ from core.chat_memory import (
     normalize_message_text,
     summarize_old_chat_turns,
 )
-from core.executor import execute
+from core.executor import execute, execute_honeypot, _is_protected
 from core.expressions import send_with_extras
 from core.gating import in_quiet_hours, is_chat_allowed
 from core.moderation_decision import (
@@ -62,12 +62,20 @@ class ModerationCog(commands.Cog):
     # ================================================================
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
-        # Don't intercept command messages
-        if message.content.startswith(CFG.command_prefix):
-            return
-        if message.guild is None or message.author.bot:
+        if message.guild is None:
             return
         if CFG.guild_id and message.guild.id != CFG.guild_id:
+            return
+        # The explicitly armed honeypot owns this channel: no chat, triggers,
+        # command-prefix exemptions, or unrelated moderation on these posts.
+        if (CFG.mod.get("honeypot_enabled", False)
+                and message.channel.id == CFG.mod.get("honeypot_channel_id", 0)):
+            await execute_honeypot(message)
+            return
+        if message.author.bot:
+            return
+        # Don't intercept command messages (empty prefix means disabled).
+        if CFG.command_prefix and message.content.startswith(CFG.command_prefix):
             return
         if message.channel.name in CFG.ignored_channels:
             return
@@ -111,8 +119,12 @@ class ModerationCog(commands.Cog):
             return
 
         # ========== MENTION RATE LIMIT ==========
-        # Checked before anything else — applies regardless of mode.
-        if was_mentioned and not CFG.state.paused:
+        # Reuse executor protection before recording, warning, or timing out.
+        # Owner, server owner, protected roles, and self are never punished.
+        protected_member = (
+            isinstance(message.author, discord.Member) and _is_protected(message.author)
+        )
+        if was_mentioned and not CFG.state.paused and not protected_member:
             MENTION_RL.record(message.author.id)
             verdict = MENTION_RL.check(message.author.id)
             if verdict == "warn":
@@ -268,7 +280,8 @@ class ModerationCog(commands.Cog):
             cooldown = float(CFG.mod.get("proactive_reply_cooldown_seconds", 300))
             last = self._last_proactive.get(message.channel.id, 0.0)
             cooldown_ok = time.time() - last > cooldown
-            if (random.random() < chance) or (cooldown_ok and not message.content.strip()):
+            if chance > 0 and cooldown_ok and random.random() < chance:
+                self._last_proactive[message.channel.id] = time.time()
                 log.info("proactive media reaction triggered for %s", message.author.display_name)
                 await self._chat(message, proactive=True)
                 return
@@ -354,38 +367,29 @@ class ModerationCog(commands.Cog):
     async def _moderation_llm(
         self, message: discord.Message, was_mentioned: bool
     ) -> dict | None:
-        # Strip "reply" from the allowed actions when the author is not in the
-        # chat allowlist. This prevents the LLM from chatting back to a
-        # non-allowed user who pings the bot. Other moderation actions
-        # (warn / delete / timeout / role / ignore) remain available so we
-        # can still moderate non-allowed users normally.
-        author_allowed = is_chat_allowed(message.author)
-        
-        # ANTI-JAILBREAK: If the user is not allowed to chat, we treat a mention
-        # as "noise" rather than a direct command. This prevents non-allowed
-        # users from triggering the moderation LLM just by mentioning the bot
-        # with a prompt injection.
-        effective_mention = was_mentioned and author_allowed
+        # Chat permission is not an invitation to reply. A noteworthy message
+        # may need moderation even when unsolicited conversation is disabled.
+        chat_allowed = (
+            CFG.chat_enabled
+            and is_chat_allowed(message.author)
+            and not in_quiet_hours()
+        )
+        effective_mention = was_mentioned and chat_allowed
+        reply_allowed = effective_mention
 
         is_nsfw_channel = message.channel.name in CFG.nsfw_channels
 
-        # Throttle: don't ask the LLM about every benign message.
-        # If not mentioned, skip unless the content looks noteworthy OR the dice say so.
         if not effective_mention:
-            # Proactive replies honor the same chat gates: quiet hours and
-            # role allowlist. A directly-addressed message already passed the
-            # gates further up in on_message, but proactive does not.
-            if in_quiet_hours():
-                return None
-            if not is_chat_allowed(message.author):
-                return None
             chance = CFG.proactive_reply_chance
             cooldown = float(CFG.mod.get("proactive_reply_cooldown_seconds", 300))
             last = self._last_proactive.get(message.channel.id, 0.0)
             cooldown_ok = time.time() - last > cooldown
-            should_ask = (
-                (random.random() < chance)
-                or (cooldown_ok and _looks_noteworthy(message.content))
+            reply_allowed = (
+                chat_allowed and chance > 0 and cooldown_ok
+                and random.random() < chance
+            )
+            should_ask = reply_allowed or (
+                cooldown_ok and _looks_noteworthy(message.content)
             )
             if not should_ask:
                 return None
@@ -434,7 +438,7 @@ class ModerationCog(commands.Cog):
             return {"action": "review", "reason": "moderation classifier returned no decision"}
 
         decision = parse_moderation_decision(raw_decision)
-        if decision == "reply" and not author_allowed:
+        if decision == "reply" and not reply_allowed:
             decision = "ignore"
         if decision in {"ignore", "review"}:
             return {

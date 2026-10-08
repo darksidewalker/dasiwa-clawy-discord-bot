@@ -138,13 +138,25 @@ When Ollama is offline:
 - Moderation LLM path is skipped (prefilter still runs)
 - Chat sends a fallback message instead of erroring
 
-### 4. Admin-only dangerous actions
+### 4. Dangerous actions: manual or explicit deterministic honeypot rule
 
 The LLM can NEVER kick or ban autonomously. If it tries:
 - The executor intercepts and flags it to the admin log channel
 - Human reads the flag, decides, then executes manually via `!kick` or `!ban`
 
 Timeouts are capped at `max_autonomous_timeout_seconds` (default: 10 min).
+
+The opt-in `moderation.honeypot_enabled` rule is the only deterministic
+automatic ban path. `moderation.honeypot_channel_id` identifies one exact
+channel. `execute_honeypot()` independently checks configuration, guild,
+member type, owner/protected roles, pause/sleep/moderation mode, ban permission,
+and hierarchy. It is routed before command-prefix and ignored-channel checks,
+never through LLM `execute()` payloads. The model's ban guard must remain intact.
+Delete each new unprotected trap post before banning a human member. Other
+bots/webhooks are delete-only; Clawy, owners, and protected roles remain exempt.
+Deletion failures never block banning and are included in the audit. Preserve
+other message history; do not scan old posts. Default OFF.
+
 
 ### 5. Clean command handling
 

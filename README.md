@@ -80,14 +80,14 @@ Pull the official image from Docker Hub or build locally:
 
 **Using pre-built image (recommended):**
 ```bash
-docker pull darksidewalker/dasiwa-clawy-discord-bot:1.3.0
+docker pull darksidewalker/dasiwa-clawy-discord-bot:1.9.8
 cp .env.example .env
 $EDITOR .env            # paste DISCORD_TOKEN
 docker compose up -d clawy
 docker compose logs -f clawy
 ```
 
-Tags available: `1.3.0` (current release), `latest`
+Tags available: `1.9.8` (current release), `latest`
 
 **Building locally:**
 ```bash
@@ -401,12 +401,73 @@ exact match. Off by default — Clawy does not block anything unless you opt in.
 - Action is logged to the admin log channel
 - The LLM is never consulted
 
+### Honeypot channel (opt-in automatic ban)
+
+Clawy can watch one trap channel and immediately ban any unprotected human
+member who posts there. This is a deterministic rule, not an LLM decision,
+and works while Ollama is offline. It is **disabled by default**.
+
+Add these keys to the existing `moderation` section in `config/config.yaml`:
+
+```yaml
+moderation:
+  honeypot_enabled: true
+  honeypot_channel_id: 123456789012345678
+```
+
+Use the channel's numeric ID, not its name. Enable Discord Developer Mode,
+then right-click the channel and select **Copy Channel ID**. Apply changes
+with `/reload` or restart Clawy. Set `honeypot_enabled: false` to disarm it.
+
+- The configured `owner_id`, actual server owner, and members with any role
+  listed in `protected_roles` are always exempt (exact role-name matching).
+- The triggering post is deleted before banning the unprotected human member.
+  Posts from other unprotected bots/webhooks are deleted without banning them.
+  Clawy's own posts, owner posts, and protected-role posts remain untouched.
+  DMs are ignored. Only new messages in the exact configured channel trigger
+  the rule; old messages are not scanned. Threads have their own channel IDs
+  and do not trigger the parent channel.
+- Every human post counts, including attachment-only posts and prefix commands.
+  The armed trap takes priority over `ignored_channels`; Clawy never chats
+  or runs normal moderation in that channel.
+- Enforcement respects pause, sleep, and moderation mode: it runs in
+  `moderate_only` and `chat_and_moderate`, not in `chat_only`. Quiet hours and
+  the chat-role allowlist do not disable it.
+- Clawy needs **View Channel** and **Manage Messages** in the trap, plus
+  server-level **Ban Members**, with its highest role above the target's role.
+  Permission, hierarchy, and Discord API failures are recorded rather than
+  reported as successful bans. A failed deletion never prevents the ban.
+- Successful bans, bot/webhook cleanup, and failures are saved in the moderation
+  database and sent to `log_channel_id` when configured. The log includes the
+  user ID, channel/message IDs, and deletion outcome. No other message history
+  is deleted, including messages in other channels.
+
+Recommended trap permissions: allow `@everyone` **View Channel**, **Send Messages**,
+and **Read Message History** (so the warning is visible). Deny **Mention Everyone**,
+**Attach Files**, **Embed Links**, **Send TTS Messages**, **Create Public Threads**,
+**Create Private Threads**, **Send Messages in Threads**, **Manage Webhooks**, and
+**Use Application Commands**. Plain links can still be posted when embeds are
+blocked. Check other role/member overwrites for explicit allows that could
+re-enable denied permissions. Do not grant Administrator to Clawy for this.
+In the private log channel Clawy needs **View Channel** and **Send Messages**.
+
+**Warning:** this rule has no warning or confirmation step. Clearly label the
+channel as a trap/do-not-post channel and verify the protected roles before
+arming it. LLM-requested bans remain blocked; this rule does not grant the
+model ban authority.
+
 ### Protected users
 
 Users matching **any** of the following are exempt from autonomous punishment:
 
 - The owner (`owner_id` from config)
+- The actual server owner
+- Clawy's own Discord identity
 - Anyone with a role listed in `protected_roles`
+
+These exemptions also apply to manual ban/kick/mute commands, honeypot
+cleanup/bans, and mention-spam warnings/timeouts. Mention-spam enforcement
+uses the executor's shared protection check before recording or punishing.
 
 They can still receive replies. Role names in `protected_roles` are
 case-sensitive and must match Discord exactly.
