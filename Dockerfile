@@ -1,5 +1,10 @@
 # ── Build stage — install dependencies into a clean layer ────────────
-FROM python:3.12-slim AS builder
+# Python 3.15 line on Debian 13 (trixie). Do NOT move to 3.16 until discord.py
+# stops calling asyncio.iscoroutinefunction() — that alias is removed in 3.16
+# and is already deprecated in 3.14/3.15 (see the DeprecationWarnings raised
+# from discord/client.py and discord/ext/commands/core.py).
+# aiohttp ships cp315 wheels, so no compiler is needed in either stage.
+FROM python:3.15-slim AS builder
 
 WORKDIR /build
 
@@ -8,7 +13,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
 # ── Runtime stage ─────────────────────────────────────────────────────
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 # UID 568 = TrueNAS default apps user.
 # Also works on standard Docker/Podman (uid just won't map to a named system user,
@@ -44,6 +49,8 @@ COPY --chmod=755 docker-entrypoint.sh /docker-entrypoint.sh
 USER 568
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    HEALTH_FILE=/app/data/health.json \
+    PYTHONPATH=/app
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

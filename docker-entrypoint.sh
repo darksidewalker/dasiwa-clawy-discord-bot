@@ -37,6 +37,32 @@ DEFAULTS_DIR="/app/defaults/config"
 CONFIG_FILE="${CONFIG_DIR}/config.yaml"
 ENV_FILE="/app/.env"
 
+# ── Liveness heartbeat ───────────────────────────────────────────────
+# The container healthcheck runs `python3 -m core.health`, which fails when the
+# heartbeat stamp in HEALTH_FILE goes stale (see core/health.py). The bot stamps
+# it itself once it is running; the entrypoint stamps it from the first command
+# so a container that is seeding config, waiting for a token, or stuck in env
+# overrides is reported by its real state instead of looking dead.
+HEALTH_FILE="${HEALTH_FILE:-/app/data/health.json}"
+export HEALTH_FILE
+
+beat() {
+    # Same module the probe runs, so the stamp path (and the fallback used when
+    # the data volume is read-only or owned by another UID) is resolved in
+    # exactly one place.
+    HEALTH_STATE="${1:-entrypoint}" PYTHONPATH=/app python3 - <<'PYEOF'
+import os
+
+try:
+    from core import health
+    health.write(os.environ.get("HEALTH_STATE", "entrypoint"))
+except Exception:
+    pass  # a broken core package must never stop the container from booting
+PYEOF
+}
+
+beat "entrypoint"
+
 # ── Step 1: seed missing config files ─────────────────────────────────
 info "Checking config directory..."
 
@@ -229,6 +255,7 @@ if is_placeholder_token "${DISCORD_TOKEN}"; then
     error "════════════════════════════════════════════════════════════"
 
     while is_placeholder_token "${DISCORD_TOKEN}"; do
+        beat "waiting_for_token"
         sleep 10
         # Refresh from .env in case the user dropped one in mid-flight.
         if [ -f "${ENV_FILE}" ]; then
@@ -275,4 +302,5 @@ fi
 
 # ── Step 6: launch bot ────────────────────────────────────────────────
 info "Starting Clawy..."
+beat "starting_bot"
 exec python3 main.py

@@ -60,6 +60,35 @@ don't set stay at whatever's in the file.
 - **Read-only config mount?** The container detects this, logs a warning,
   and skips seeding. You must pre-populate the volume yourself.
 
+### Healthcheck
+
+The container has a real liveness probe, not a placeholder:
+
+```yaml
+healthcheck:
+  test: ["CMD", "python3", "-m", "core.health"]
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 60s
+```
+
+The bot stamps `HEALTH_FILE` (default `/app/data/health.json`) from its event
+loop every 10 s; the probe exits non-zero once the stamp is older than 90 s.
+That catches the failure `restart: unless-stopped` cannot see: a process that is
+alive but making no progress. Before the bot itself starts, the entrypoint stamps
+the same file, so the state you see in `docker inspect --format '{{json .State.Health}}'`
+tells you where boot is: `entrypoint` → `waiting_for_token` → `starting_bot` →
+`loading_cogs` → `gateway_connected`. A container that is only missing its token
+stays **healthy** by design.
+
+All three knobs are pure env (never written into `config.yaml`):
+`HEALTH_FILE`, `HEALTH_INTERVAL` (default 10 s), `HEALTH_MAX_AGE` (default 90 s).
+If `HEALTH_FILE` cannot be stamped — data volume mounted read-only, or owned by
+a UID the container does not run as — the heartbeat falls back to
+`HEALTH_FALLBACK_FILE` (default `/tmp/clawy-health.json`) and the probe output
+says `fallback`, rather than reporting a working bot as unhealthy forever.
+
 ---
 
 ## 2. Local Docker (Linux / Mac / WSL)

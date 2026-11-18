@@ -64,7 +64,8 @@ discord-bot/
 │   ├── prefilter.py           # Fast rule-based pre-LLM filter
 │   ├── executor.py            # Executes actions with guardrails
 │   ├── tracking.py            # In-memory spam and mention rate limiters
-│   └── gating.py              # Quiet hours + chat role allowlist (pure logic)
+│   ├── gating.py              # Quiet hours + chat role allowlist (pure logic)
+│   └── health.py              # Liveness heartbeat + container healthcheck probe (stdlib only)
 └── cogs/                      # Discord event handlers
     ├── _common.py             # CleanCommandCog base + ack / reply_permanent helpers
     ├── moderation.py          # Main on_message listener (mod + chat router)
@@ -338,7 +339,9 @@ config/config.yaml  <  /app/.env  <  process environment variables
 | `OLLAMA_MODEL` | `ollama.model` | string |
 
 **Not written into config.yaml:** `DISCORD_TOKEN` and `OLLAMA_URL`. These are
-read from the process environment directly by `core/config.py`.
+read from the process environment directly by `core/config.py`. Same for
+`HEALTH_FILE` / `HEALTH_INTERVAL` / `HEALTH_MAX_AGE`, which are read by
+`core/health.py` (plus `HEALTH_FALLBACK_FILE` for the unwritable-volume case).
 
 **Critical invariants for agents modifying this flow:**
 
@@ -356,6 +359,17 @@ read from the process environment directly by `core/config.py`.
   in `docker-entrypoint.sh`, (b) the "Supported overrides" comment block in
   the same file, (c) the table in `DOCKER.md`, (d) the section in
   `.env.example`, and (e) the table above.
+- **Keep the heartbeat probe cheap and stdlib-only.** The compose healthcheck is
+  `python3 -m core.health`, which reads the `HEALTH_FILE` stamp (default
+  `/app/data/health.json`) and exits 1 when it is older than `HEALTH_MAX_AGE`
+  (90 s). The entrypoint stamps it while seeding config / waiting for a token,
+  and `main.py` stamps it from the event loop. Never let a heartbeat write raise
+  or exit the process, never import `discord`/`aiohttp` into `core/health.py`
+  (the probe must work while Discord and Ollama are down), and stamp from a
+  worker thread so the loop never blocks on the data volume. `tests/test_health.py`
+  pins this contract. If `HEALTH_FILE` is not stampable (read-only or foreign-UID
+  data volume), fall back to `HEALTH_FALLBACK_FILE` — never let the heartbeat go
+  missing, or a healthy bot reports as unhealthy forever.
 
 ---
 

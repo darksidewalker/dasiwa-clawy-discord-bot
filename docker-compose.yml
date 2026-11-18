@@ -48,9 +48,15 @@ services:
         max-size: "10m"
         max-file: "3"
 
+    # Liveness, not just "the container is running": core.health stamps a
+    # heartbeat file from the event loop every 10 s, and this probe fails once
+    # the stamp is >90 s old — i.e. the process is alive but making no progress
+    # (blocked loop, wedged startup). Before the bot starts, the entrypoint
+    # stamps the same file with its own state, so waiting for DISCORD_TOKEN is
+    # reported as "waiting_for_token" instead of looking like a dead container.
     healthcheck:
-      test: ["CMD", "python3", "-c", "import sys; sys.exit(0)"]
-      interval: 60s
+      test: ["CMD", "python3", "-m", "core.health"]
+      interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 60s

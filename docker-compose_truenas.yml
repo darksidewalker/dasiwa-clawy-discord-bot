@@ -84,3 +84,14 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+    # Liveness probe: core.health stamps /app/data/health.json from the event
+    # loop; this fails once the stamp is >90 s old (process alive but stuck).
+    # TrueNAS shows the result in Apps → your app; a container that is merely
+    # waiting for DISCORD_TOKEN stays healthy (state: waiting_for_token).
+    healthcheck:
+      test: ["CMD", "python3", "-m", "core.health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s

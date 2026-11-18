@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import signal
 
@@ -9,6 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from core import health
 from core.config import CFG
 from core.ollama_client import OLLAMA
 from core.store import STORE
@@ -19,6 +21,11 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("bot")
+
+# Liveness label read by core.health's heartbeat task (see core/health.py).
+# The container healthcheck reports this string, so it shows where startup is
+# stuck when the bot is not connected.
+HEARTBEAT = {"state": "starting"}
 
 
 def build_bot() -> commands.Bot:
@@ -56,6 +63,7 @@ def build_bot() -> commands.Bot:
                 synced = await bot.tree.sync()
                 log.info("synced %d application commands globally", len(synced))
             synced_commands = True
+        HEARTBEAT["state"] = "gateway_connected"
         log.info("mode=%s", CFG.mode)
         healthy = await OLLAMA.health()
         if not healthy:
@@ -63,6 +71,13 @@ def build_bot() -> commands.Bot:
                         CFG.ollama_url)
         else:
             log.info("Ollama reachable. Using model '%s'.", CFG.model)
+
+    @bot.event
+    async def on_disconnect() -> None:
+        # Gateway dropped (discord.py reconnects by itself). Still healthy — the
+        # loop is alive — but the label tells operators why nothing is happening.
+        HEARTBEAT["state"] = "gateway_disconnected"
+        log.warning("gateway connection dropped")
 
     @bot.tree.error
     async def on_app_command_error(
@@ -122,6 +137,9 @@ async def _main() -> None:
     STORE.path = CFG.db_path
     await STORE.init()
 
+    HEARTBEAT["state"] = "loading_cogs"
+    beat_task = asyncio.create_task(health.beat_forever(HEARTBEAT))
+
     bot = build_bot()
     await bot.load_extension("cogs.moderation")
     await bot.load_extension("cogs.admin")
@@ -158,6 +176,10 @@ async def _main() -> None:
                 if t.exception():
                     raise t.exception()  # type: ignore[misc]
     finally:
+        HEARTBEAT["state"] = "stopping"
+        beat_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await beat_task
         await OLLAMA.close()
         await STORE.close()
 
